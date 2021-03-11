@@ -62,6 +62,8 @@ public:
     vector<_vitur> viturs;
     unordered_map<int, int> viturs_map;
     unordered_map<string, int> vitur_string_map, server_string_map;
+//    trick member data
+    vector<int> server_magic_ids;
 };
 
 class IoEngine {
@@ -190,12 +192,18 @@ void Main() {
     getchar();
     engine.N = N;
     engine.server_list.resize(N);
+    engine.server_magic_ids.resize(N);
     for (int i = 0; i < N; i++) {
         server s = ioEngine.read_server();
         engine.server_list[i] = s;
         engine.server_string_map[s.mode] = i;
+        engine.server_magic_ids[i] = i;
     }
-
+    auto& server_ids = engine.server_magic_ids;
+    sort(server_ids.begin(), server_ids.end(),[&](int x,int y){
+       return engine.server_list[x].hard_cost + engine.server_list[x].soft_cost * 100 <
+                engine.server_list[y].hard_cost + engine.server_list[y].soft_cost * 100;
+    });
     int M = ioEngine.read_int();
     getchar();
     engine.M = M;
@@ -285,9 +293,9 @@ void Main() {
 //                TODO: not find, should purchase now!
                 if (!flag) {
                     for (int i = 0; i < N; i++) {
-                        auto server = engine.server_list[i];
+                        auto server = engine.server_list[server_ids[i]];
                         if (v.double_node && server.core >= v.core && server.mem >= v.mem) {
-                            purchase_plan[i] += 1;
+                            purchase_plan[server_ids[i]] += 1;
                             _server _s(server.mode, server.core, server.mem, server.hard_cost, server.soft_cost, engine.servers.size());
                             _s.left_core -= v.core / 2;
                             _s.left_mem -= v.mem / 2;
@@ -299,7 +307,7 @@ void Main() {
                             deploy_plan.push_back({server_index, 0});
                             break;
                         } else if (!v.double_node && server.core / 2 >= v.core && server.mem / 2 >= v.mem) {
-                            purchase_plan[i] += 1;
+                            purchase_plan[server_ids[i]] += 1;
                             _server _s(server.mode, server.core, server.mem, server.hard_cost, server.soft_cost, engine.servers.size());
                             _s.left_core -= v.core;
                             _s.left_mem -= v.mem;
@@ -379,16 +387,24 @@ void Main() {
 //    fprintf(stderr, "总开销 = %lld, 购买成本 = %lld, 日常开销 = %lld\n", all_cost, purchase_cost, daily_cost);
 }
 
-//#define DY
+//training_1 and training_2 cannot define at the same time!
+//提交前必须注释这几行 以及 所有stderr语句!
+//#define training_1
+//#define training_2
 int main() {
     // TODO:read standard input
     // TODO:process
     // TODO:write standard output
     // TODO:fflush(stdout);
-#ifdef DY
-    freopen("training-2.in", "r", stdin);
-    freopen("training_2.out", "w", stdout);
-    freopen("training_2.err", "w", stderr);
+#ifdef training_1
+    freopen("training-1.in", "r", stdin);
+    freopen("training_1.out", "w", stdout);
+    freopen("training_1.err", "w", stderr);
+#endif
+#ifdef training_2
+    freopen("training-1.in", "r", stdin);
+    freopen("training_1.out", "w", stdout);
+    freopen("training_1.err", "w", stderr);
 #endif
     Main();
     return 0;
