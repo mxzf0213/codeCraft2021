@@ -37,17 +37,46 @@ def read_txt(path: str):
     del_req_array = np.array(del_req_list)
 
 
+def print_list(i_list: list):
+    for i in i_list:
+        print(i)
+
+
 if __name__ == "__main__":
-    path = "./training-data/training-2.txt"
+    trian_id = 2
+    path = "./training-data/training-" + str(trian_id) + ".txt"
     read_txt(path)
+
+    server_mode_list = server_array[:, 0].tolist()
+    # print_list(server_mode_list)
+
+    server_core_list = server_array[:, 1].tolist()
+    # print_list(server_core_list)
+
+    server_mem_list = server_array[:, 2].tolist()
+    # print_list(server_mem_list)
+
+    server_hard_cost_list = server_array[:, 3].tolist()
+    # print_list(server_hard_cost_list)
+
+    server_soft_cost_list = server_array[:, 4].tolist()
+    print_list(server_soft_cost_list)
+
     virtu_mode_list = virtu_array[:, 0].tolist()
+    # print_list(virtu_mode_list)
+
+    virtu_core_list = virtu_array[:, 1].tolist()
+    # print_list(virtu_core_list)
+
+    virtu_mem_list = virtu_array[:, 2].tolist()
+    # print_list(virtu_mem_list)
+
+    virtu_double_list = virtu_array[:, 3].tolist()
+    # print_list(virtu_double_list)
+
     virtu_req_mode_count = {}
     for virtu_mode in virtu_mode_list:
         virtu_req_mode_count[virtu_mode] = 0
     virtu_req_mode_list = add_req_array[:, 1].tolist()
     for virtu_req_mode in virtu_req_mode_list:
         virtu_req_mode_count[virtu_req_mode] += 1
-    print(virtu_req_mode_count)
-    with open("./output-data/vitu_req_mode_cout-2.txt", "w") as f:
-        for k, v in virtu_req_mode_count.items():
-            f.write(str(v)+"\n")
