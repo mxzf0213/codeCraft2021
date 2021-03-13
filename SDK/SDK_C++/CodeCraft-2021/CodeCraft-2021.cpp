@@ -1,11 +1,16 @@
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
+#include <set>
 #include <cstdio>
 #include <algorithm>
 #include <assert.h>
 #include <cstring>
+#include <ctime>
 using namespace std;
 typedef long long ll;
+//提交前务必确保DEBUG定义被注释
+#define DEBUG
 
 //服务器
 class server {
@@ -23,6 +28,7 @@ public:
     int index;
     int left_core, left_mem;
     int right_core, right_mem;
+    unordered_set<int> vitur_ids;
     _server(){}
     _server(string mode, int core, int mem, int hard_cost, int soft_cost,int index) :
             server(mode, core, mem, hard_cost, soft_cost),index(index) {
@@ -56,6 +62,7 @@ public:
 class Engine {
 public:
     int N, M;
+    int total_viturs;
     vector<server> server_list;
     vector<vitur> vitur_list;
     vector<_server> servers;
@@ -64,6 +71,9 @@ public:
     unordered_map<string, int> vitur_string_map, server_string_map;
 //    trick member data
     vector<int> server_magic_ids;
+    Engine() {
+        total_viturs = 0;
+    }
 };
 
 class IoEngine {
@@ -78,7 +88,9 @@ private:
 public:
     int read_int() {
         fscanf(stdin, "%d", &N);
-//        fprintf(stderr, "read number: %d\n", N);
+#ifdef DEBUG
+        fprintf(stderr, "read number: %d\n", N);
+#endif
         return N;
     }
 
@@ -97,8 +109,10 @@ public:
             cnt += 1;
         }
         server s(mode, core, mem, hard_cost, soft_cost);
-//        fprintf(stderr, "read server: mode = %s, core = %d, mem = %d, hard_cost = %d, soft_cost = %d\n",
-//                mode.c_str(), core, mem, hard_cost, soft_cost);
+#ifdef DEBUG
+        fprintf(stderr, "read server: mode = %s, core = %d, mem = %d, hard_cost = %d, soft_cost = %d\n",
+                mode.c_str(), core, mem, hard_cost, soft_cost);
+#endif
         return s;
     }
 
@@ -116,8 +130,10 @@ public:
             cnt += 1;
         }
         vitur v(mode, core, mem, double_node);
-//        fprintf(stderr, "read vitur: mode = %s, core = %d, mem = %d, double_node = %d\n",
-//                mode.c_str(), core, mem, double_node);
+#ifdef DEBUG
+        fprintf(stderr, "read vitur: mode = %s, core = %d, mem = %d, double_node = %d\n",
+                mode.c_str(), core, mem, double_node);
+#endif
         return v;
     }
 
@@ -139,7 +155,9 @@ public:
             token = strtok(NULL, sep);
             cnt += 1;
         }
-//        fprintf(stderr, "read add: mode = %s, id = %d\n",mode.c_str(), N);
+#ifdef DEBUG
+        fprintf(stderr, "read add: mode = %s, id = %d\n",mode.c_str(), N);
+#endif
         return {mode, N};
     }
 
@@ -152,7 +170,9 @@ public:
             token = strtok(NULL, sep);
             cnt += 1;
         }
-//        fprintf(stderr, "read del: id = %d\n", N);
+#ifdef DEBUG
+        fprintf(stderr, "read del: id = %d\n", N);
+#endif
         return {"", N};
     }
 
@@ -183,6 +203,14 @@ public:
     }
 };
 const char* IoEngine::sep = "\n (),";
+
+struct Node
+{
+    int id;
+    Node* next;
+    Node(){}
+    Node(int id):id(id){next = NULL;}
+};
 
 void Main() {
     Engine engine;
@@ -215,15 +243,136 @@ void Main() {
     }
 
     ll purchase_cost = 0, daily_cost = 0, all_cost = 0;
+    int migrate_times = 0;
     int T = ioEngine.read_int();
 //    处理每一天的请求
     while (T--) {
 //        每一天有R个请求
         int R = ioEngine.read_int();
+        int _R = R;
         getchar();
         int add_op = 0;
         vector<pair<int, int> > deploy_plan;
         vector<int> purchase_plan(engine.N, 0);
+
+        vector<pair<int,pair<int,int> > > migrate_details;
+        int cur_migrate = 0;
+        int max_migrate = engine.total_viturs * 5 / 1000;
+
+        auto& servers = engine.servers;
+        auto& viturs = engine.viturs;
+        vector<int> servers_ids(servers.size());
+        for(int i=0;i<servers_ids.size();i++)
+        {
+            servers_ids[i] = i;
+        }
+        sort(servers_ids.begin(), servers_ids.end(),[&](int x,int y){
+            return servers[x].core / 2 - servers[x].left_core < servers[y].core / 2 - servers[y].left_core;
+        });
+        Node* head = NULL;
+        Node* cur = NULL;
+        for(auto id: servers_ids)
+        {
+            if(head == NULL)
+            {
+                head = new Node(id);
+                cur = head;
+            }
+            else
+            {
+                Node* temp = new Node(id);
+                cur->next = temp;
+                cur = temp;
+            }
+        }
+        sort(servers_ids.begin(), servers_ids.end(),[&](int x,int y){
+            return servers[x].left_core < servers[y].left_core;
+        });
+        for(auto id:servers_ids)
+        {
+            auto& right_server = servers[id];
+            int& right_server_left_core_left = right_server.left_core;
+            int& right_server_right_core_left = right_server.right_core;
+            int& right_server_left_mem_left = right_server.left_mem;
+            int& right_server_right_mem_left = right_server.right_mem;
+            Node* key = head;
+            Node* last_key = NULL;
+            for(int i = 0; i < 1000; i++)
+            {
+                if(key == NULL)break;
+                if(key->id == id){
+                    last_key = key;
+                    key = key->next;
+                    continue;
+                }
+                auto& left_server = servers[key->id];
+                if(left_server.vitur_ids.size() > max_migrate)
+                {
+                    last_key = key;
+                    key = key->next;
+                    continue;
+                }
+                int left_server_left_core_used = left_server.core/2 - left_server.left_core;
+                int left_server_right_core_used = left_server.core/2 - left_server.right_core;
+                int left_server_left_mem_used = left_server.mem/2 - left_server.left_mem;
+                int left_server_right_mem_used = left_server.mem/2 - left_server.right_mem;
+//                if(left_server_right_core_used > right_server_right_core_left)break;
+                bool delete_flag = false;
+                if(left_server_left_core_used <= right_server_left_core_left &&
+                   left_server_right_core_used <= right_server_right_core_left &&
+                   left_server_left_mem_used <= right_server_left_mem_left &&
+                   left_server_right_mem_used <= right_server_right_mem_left)
+                {
+                    for(auto vitur_id: left_server.vitur_ids)
+                    {
+                        auto& vitur = engine.viturs[engine.viturs_map[vitur_id]];
+                        vitur.server_id = id;
+                        migrate_details.push_back({vitur_id, {id, vitur.deploy_node}});
+                        max_migrate -= 1;
+                        migrate_times += 1;
+                        cur_migrate += 1;
+                        right_server.vitur_ids.insert(vitur_id);
+                    }
+                    left_server.vitur_ids.clear();
+                    left_server.left_core = left_server.core / 2;
+                    left_server.right_core = left_server.core / 2;
+                    left_server.left_mem = left_server.mem / 2;
+                    left_server.right_mem = left_server.mem / 2;
+                    right_server.left_core -= left_server_left_core_used;
+                    right_server.right_core -= left_server_right_core_used;
+                    right_server.left_mem -= left_server_left_mem_used;
+                    right_server.right_mem -= left_server_right_mem_used;
+                    if(key == head)
+                    {
+                        Node* temp = head;
+                        head = head->next;
+                        key = head;
+                        free(temp);
+                        delete_flag = true;
+                    }
+                    else
+                    {
+                        Node* temp = key;
+                        last_key->next = key->next;
+                        key = key->next;
+                        free(temp);
+                        delete_flag = true;
+                    }
+                }
+                if(!delete_flag) {
+                    last_key = key;
+                    key = key->next;
+                }
+            }
+        }
+        cur = head;
+        while(cur)
+        {
+            Node* nt = cur->next;
+            free(cur);
+            cur = nt;
+        }
+
         while (R--) {
             pair<string, int> r = ioEngine.read_request();
             string mode = r.first;
@@ -234,6 +383,7 @@ void Main() {
                 _vitur _v = engine.viturs[id];
 //                TODO: 释放_v所在服务器的资源
                 int server_id = _v.server_id;
+                engine.servers[server_id].vitur_ids.erase(vitur_id);
                 if (_v.double_node) {
                     engine.servers[server_id].left_core += _v.core / 2;
                     engine.servers[server_id].left_mem += _v.mem / 2;
@@ -266,27 +416,52 @@ void Main() {
                         _server.right_core -= v.core / 2;
                         _server.left_mem -= v.mem / 2;
                         _server.right_mem -= v.mem / 2;
+                        _server.vitur_ids.insert(vitur_id);
                         _vitur _v(mode, v.core, v.mem, v.double_node, vitur_id, server_index);
                         engine.viturs.push_back(_v);
                         deploy_plan.push_back({server_index, 0});
                         flag = true;
                         break;
-                    } else if (!v.double_node && _server.left_core >= v.core && _server.left_mem >= v.mem) {
-                        _server.left_core -= v.core;
-                        _server.left_mem -= v.mem;
-                        _vitur _v(mode, v.core, v.mem, v.double_node, vitur_id, server_index, 1);
-                        engine.viturs.push_back(_v);
-                        deploy_plan.push_back({server_index, 1});
-                        flag = true;
-                        break;
-                    } else if (!v.double_node && _server.right_core >= v.core && _server.right_mem >= v.mem) {
-                        _server.right_core -= v.core;
-                        _server.right_mem -= v.mem;
-                        _vitur _v(mode, v.core, v.mem, v.double_node, vitur_id, server_index, 2);
-                        engine.viturs.push_back(_v);
-                        deploy_plan.push_back({server_index, 2});
-                        flag = true;
-                        break;
+                    } else if (_server.left_core >= _server.right_core) {
+                        if (!v.double_node && _server.left_core >= v.core && _server.left_mem >= v.mem) {
+                            _server.left_core -= v.core;
+                            _server.left_mem -= v.mem;
+                            _server.vitur_ids.insert(vitur_id);
+                            _vitur _v(mode, v.core, v.mem, v.double_node, vitur_id, server_index, 1);
+                            engine.viturs.push_back(_v);
+                            deploy_plan.push_back({server_index, 1});
+                            flag = true;
+                            break;
+                        } else if (!v.double_node && _server.right_core >= v.core && _server.right_mem >= v.mem) {
+                            _server.right_core -= v.core;
+                            _server.right_mem -= v.mem;
+                            _server.vitur_ids.insert(vitur_id);
+                            _vitur _v(mode, v.core, v.mem, v.double_node, vitur_id, server_index, 2);
+                            engine.viturs.push_back(_v);
+                            deploy_plan.push_back({server_index, 2});
+                            flag = true;
+                            break;
+                        }
+                }else{
+                        if (!v.double_node && _server.right_core >= v.core && _server.right_mem >= v.mem) {
+                            _server.right_core -= v.core;
+                            _server.right_mem -= v.mem;
+                            _server.vitur_ids.insert(vitur_id);
+                            _vitur _v(mode, v.core, v.mem, v.double_node, vitur_id, server_index, 2);
+                            engine.viturs.push_back(_v);
+                            deploy_plan.push_back({server_index, 2});
+                            flag = true;
+                            break;
+                        }else if (!v.double_node && _server.left_core >= v.core && _server.left_mem >= v.mem) {
+                            _server.left_core -= v.core;
+                            _server.left_mem -= v.mem;
+                            _server.vitur_ids.insert(vitur_id);
+                            _vitur _v(mode, v.core, v.mem, v.double_node, vitur_id, server_index, 1);
+                            engine.viturs.push_back(_v);
+                            deploy_plan.push_back({server_index, 1});
+                            flag = true;
+                            break;
+                        }
                     }
                     server_index += 1;
                 }
@@ -301,6 +476,7 @@ void Main() {
                             _s.left_mem -= v.mem / 2;
                             _s.right_core -= v.core / 2;
                             _s.right_mem -= v.mem / 2;
+                            _s.vitur_ids.insert(vitur_id);
                             engine.servers.push_back(_s);
                             _vitur _v(mode, v.core, v.mem, v.double_node, vitur_id, engine.servers.size() - 1);
                             engine.viturs.push_back(_v);
@@ -311,6 +487,7 @@ void Main() {
                             _server _s(server.mode, server.core, server.mem, server.hard_cost, server.soft_cost, engine.servers.size());
                             _s.left_core -= v.core;
                             _s.left_mem -= v.mem;
+                            _s.vitur_ids.insert(vitur_id);
                             engine.servers.push_back(_s);
                             _vitur _v(mode, v.core, v.mem, v.double_node, vitur_id, engine.servers.size() - 1, 1);
                             engine.viturs.push_back(_v);
@@ -344,7 +521,7 @@ void Main() {
         {
             auto& _v = engine.viturs[engine.viturs.size() - 1 - i];
             auto& plan = deploy_plan[deploy_plan.size() - 1 - i];
-            assert(_v.server_id == plan.first);
+//            assert(_v.server_id == plan.first);
             if(_v.server_id >= servers_size - purchase_size)
             {
                 _v.server_id = reorder_map[_v.server_id];
@@ -368,7 +545,14 @@ void Main() {
                 purchase_cost += (ll)purchase_plan[i] * engine.server_list[i].hard_cost;
             }
         }
-        ioEngine.output_migration(0);
+        ioEngine.output_migration(cur_migrate);
+        for(auto op: migrate_details)
+        {
+            int vitur_id = op.first;
+            int target_server = op.second.first;
+            int deploy_node = op.second.second;
+            ioEngine.output_migrate(vitur_id, target_server, deploy_node);
+        }
         for(auto plan: deploy_plan)
         {
             ioEngine.output_deploy(plan.first, plan.second);
@@ -382,15 +566,20 @@ void Main() {
                 daily_cost += _server.soft_cost;
             }
         }
+        engine.total_viturs += add_op - (_R - add_op);
     }
     all_cost = purchase_cost + daily_cost;
-//    fprintf(stderr, "总开销 = %lld, 购买成本 = %lld, 日常开销 = %lld\n", all_cost, purchase_cost, daily_cost);
+#ifdef DEBUG
+    fprintf(stderr, "总开销 = %lld, 购买成本 = %lld, 日常开销 = %lld, 总迁移次数 = %d\n", all_cost, purchase_cost, daily_cost, migrate_times);
+#endif
 }
 
 //training_1 and training_2 cannot define at the same time!
-//提交前必须注释这几行 以及 所有stderr语句!
+//提交前必须注释这几行 以及 所有DEBUG定义语句!
 //#define training_1
-//#define training_2
+#define training_2
+//#define sample
+#define CLOCK
 int main() {
     // TODO:read standard input
     // TODO:process
@@ -402,10 +591,22 @@ int main() {
     freopen("training_1.err", "w", stderr);
 #endif
 #ifdef training_2
-    freopen("training-1.in", "r", stdin);
-    freopen("training_1.out", "w", stdout);
-    freopen("training_1.err", "w", stderr);
+    freopen("training-2.in", "r", stdin);
+    freopen("training_2.out", "w", stdout);
+    freopen("training_2.err", "w", stderr);
 #endif
+#ifdef sample
+    freopen("sample.in", "r", stdin);
+    freopen("sample.out", "w", stdout);
+    freopen("sample.err", "w", stderr);
+#endif
+#ifdef CLOCK
+    clock_t start = clock();
+#endif CLOCK
     Main();
+#ifdef CLOCK
+    clock_t ends = clock();
+    fprintf(stderr,"Running Time : %f\n", (double)(ends - start)/ CLOCKS_PER_SEC);
+#endif CLOCK
     return 0;
 }
