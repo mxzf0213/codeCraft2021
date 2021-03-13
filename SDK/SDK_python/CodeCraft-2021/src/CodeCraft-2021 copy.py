@@ -18,7 +18,7 @@ class Server:
 
 class Server1(Server):
     """
-    NUMA服务器类
+    使用服务器类
     mode:服务器型号
     core:CPU核心数
     mem:内存大小
@@ -56,7 +56,7 @@ class Vitur:
 
 class Vitur1(Vitur):
     """
-    虚拟机类
+    使用虚拟机类
     mode:虚拟机型号
     core:虚拟机CPU核心数
     mem:虚拟机内存大小
@@ -77,15 +77,6 @@ class Vitur1(Vitur):
 class Engine:
     """
     数据中心资源类
-    N:可采购的服务器类型数
-    M:可使用的虚拟机类型数
-    server_list:可采购的服务器类型列表
-    vitur_list:可使用的虚拟机类型列表
-    servers:服务器列表
-    viturs:虚拟机列表
-    viturs_map:<虚拟机id,服务器id>
-    vitur_string_map:<虚拟机型号,虚拟机id>
-    server_string_map:<服务器型号，服务器id>
     """
 
     def __init__(self):
