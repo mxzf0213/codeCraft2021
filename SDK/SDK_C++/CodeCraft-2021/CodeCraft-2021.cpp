@@ -9,8 +9,11 @@
 #include <ctime>
 using namespace std;
 typedef long long ll;
+#define price_eps 1000
+#define core_mem_eps 4.5
+#define EPS -1
 //提交前务必确保DEBUG定义被注释
-#define DEBUG
+//#define DEBUG
 
 //服务器
 class server {
@@ -18,9 +21,16 @@ public:
     string mode;
     int core, mem;
     int hard_cost, soft_cost;
+    double core_mem;
+    int sum_cost;
+    int average_cost;
     server(){}
     server(string mode, int core, int mem, int hard_cost, int soft_cost) :
-            mode(mode), core(core), mem(mem), hard_cost(hard_cost), soft_cost(soft_cost) {}
+            mode(mode), core(core), mem(mem), hard_cost(hard_cost), soft_cost(soft_cost) {
+        core_mem = 1.0 * core / mem;
+        sum_cost = hard_cost + soft_cost * 100;
+        average_cost = (hard_cost + soft_cost * 100) / core;
+    }
 };
 
 class _server : public server {
@@ -43,9 +53,12 @@ public:
     string mode;
     int core, mem;
     bool double_node;
+    double core_mem;
     vitur(){}
     vitur(string mode, int core, int mem, bool double_node) :
-            mode(mode), core(core), mem(mem), double_node(double_node) {}
+            mode(mode), core(core), mem(mem), double_node(double_node) {
+        core_mem = 1.0 * core / mem;
+    }
 };
 
 class _vitur : public vitur {
@@ -110,8 +123,8 @@ public:
         }
         server s(mode, core, mem, hard_cost, soft_cost);
 #ifdef DEBUG
-        fprintf(stderr, "read server: mode = %s, core = %d, mem = %d, hard_cost = %d, soft_cost = %d\n",
-                mode.c_str(), core, mem, hard_cost, soft_cost);
+        fprintf(stderr, "read server: mode = %s, core = %d, mem = %d, hard_cost = %d, soft_cost = %d, cpu_mem = %.3f\n",
+                mode.c_str(), core, mem, hard_cost, soft_cost, s.core_mem);
 #endif
         return s;
     }
@@ -131,8 +144,8 @@ public:
         }
         vitur v(mode, core, mem, double_node);
 #ifdef DEBUG
-        fprintf(stderr, "read vitur: mode = %s, core = %d, mem = %d, double_node = %d\n",
-                mode.c_str(), core, mem, double_node);
+        fprintf(stderr, "read vitur: mode = %s, core = %d, mem = %d, double_node = %d, cpu_mem = %.3f\n",
+                mode.c_str(), core, mem, double_node, v.core_mem);
 #endif
         return v;
     }
@@ -212,6 +225,128 @@ struct Node
     Node(int id):id(id){next = NULL;}
 };
 
+void policy_pick_server(vitur v, vector<_server>&servers, int& server_index, bool &flag)
+{
+     int count = 0;
+     for(auto& _server: servers)
+     {
+         if(abs(v.core_mem - _server.core_mem) <= EPS)
+         {
+             if (v.double_node && _server.left_core >= v.core / 2 && _server.left_mem >= v.mem / 2
+                 && _server.right_core >= v.core / 2 && _server.right_mem >= v.mem / 2)
+             {
+                 server_index = count;
+                 flag = true;
+                 return;
+             }
+             else if (_server.left_core >= _server.right_core)
+             {
+                 if (!v.double_node && _server.left_core >= v.core && _server.left_mem >= v.mem)
+                 {
+                     server_index = count;
+                     flag = true;
+                     return;
+                 }
+                 else if (!v.double_node && _server.right_core >= v.core && _server.right_mem >= v.mem)
+                 {
+                     server_index = count;
+                     flag = true;
+                     return;
+                 }
+             }
+             else
+             {
+                 if (!v.double_node && _server.right_core >= v.core && _server.right_mem >= v.mem)
+                 {
+                     server_index = count;
+                     flag = true;
+                     return;
+                 }
+                 else if (!v.double_node && _server.left_core >= v.core && _server.left_mem >= v.mem)
+                 {
+                     server_index = count;
+                     flag = true;
+                     return;
+                 }
+             }
+         }
+         count += 1;
+     }
+     if(flag)return;
+     count = 0;
+    for(auto& _server: servers)
+    {
+        if (v.double_node && _server.left_core >= v.core / 2 && _server.left_mem >= v.mem / 2
+            && _server.right_core >= v.core / 2 && _server.right_mem >= v.mem / 2)
+        {
+            server_index = count;
+            flag = true;
+            return;
+        }
+        else if (_server.left_core >= _server.right_core)
+        {
+            if (!v.double_node && _server.left_core >= v.core && _server.left_mem >= v.mem)
+            {
+                server_index = count;
+                flag = true;
+                return;
+            }
+            else if (!v.double_node && _server.right_core >= v.core && _server.right_mem >= v.mem)
+            {
+                server_index = count;
+                flag = true;
+                return;
+            }
+        }
+        else
+        {
+            if (!v.double_node && _server.right_core >= v.core && _server.right_mem >= v.mem)
+            {
+                server_index = count;
+                flag = true;
+                return;
+            }
+            else if (!v.double_node && _server.left_core >= v.core && _server.left_mem >= v.mem)
+            {
+                server_index = count;
+                flag = true;
+                return;
+            }
+        }
+        count += 1;
+    }
+}
+
+int policy_purchase_server(vitur v,vector<int> server_ids,vector<server> server_list)
+{
+    for(auto id: server_ids)
+    {
+        auto server = server_list[id];
+        if(abs(server.core_mem - v.core_mem) > EPS)continue;
+        if (v.double_node && server.core >= v.core && server.mem >= v.mem)
+        {
+            return id;
+        }
+        else if (!v.double_node && server.core / 2 >= v.core && server.mem / 2 >= v.mem)
+        {
+            return id;
+        }
+    }
+    for(auto id: server_ids)
+    {
+        auto server = server_list[id];
+        if (v.double_node && server.core >= v.core && server.mem >= v.mem)
+        {
+            return id;
+        }
+        else if (!v.double_node && server.core / 2 >= v.core && server.mem / 2 >= v.mem)
+        {
+            return id;
+        }
+    }
+    return -1;
+}
+
 void Main() {
     Engine engine;
     IoEngine ioEngine;
@@ -227,11 +362,6 @@ void Main() {
         engine.server_string_map[s.mode] = i;
         engine.server_magic_ids[i] = i;
     }
-    auto& server_ids = engine.server_magic_ids;
-    sort(server_ids.begin(), server_ids.end(),[&](int x,int y){
-       return engine.server_list[x].hard_cost + engine.server_list[x].soft_cost * 100 <
-                engine.server_list[y].hard_cost + engine.server_list[y].soft_cost * 100;
-    });
     int M = ioEngine.read_int();
     getchar();
     engine.M = M;
@@ -245,6 +375,21 @@ void Main() {
     ll purchase_cost = 0, daily_cost = 0, all_cost = 0;
     int migrate_times = 0;
     int T = ioEngine.read_int();
+    auto& server_ids = engine.server_magic_ids;
+    auto server_list = engine.server_list;
+    sort(server_ids.begin(), server_ids.end(),[&](int x,int y){
+        return server_list[x].core_mem + 1/server_list[x].core_mem <
+               server_list[y].core_mem + 1/server_list[y].core_mem;
+    });
+    for(int i=0;i<server_ids.size();i++)
+    {
+        int j;
+        for(j=i;j<server_ids.size() && server_list[j].core_mem + 1/server_list[j].core_mem - server_list[i].core_mem - 1/server_list[i].core_mem <= core_mem_eps;j++);
+        sort(server_ids.begin() + i, server_ids.begin() + j,[&](int x,int y){
+            return server_list[x].sum_cost < server_list[y].sum_cost;
+        });
+        i = j -1;
+    }
 //    处理每一天的请求
     while (T--) {
 //        每一天有R个请求
@@ -255,6 +400,8 @@ void Main() {
         vector<pair<int, int> > deploy_plan;
         vector<int> purchase_plan(engine.N, 0);
 
+//        trick: 迁移策略，先迁移，后采购部署
+//                迁移目的服务器尽量选择剩余核心数少的，原服务器尽量选择使用核心数少的
         vector<pair<int,pair<int,int> > > migrate_details;
         int cur_migrate = 0;
         int max_migrate = engine.total_viturs * 5 / 1000;
@@ -404,12 +551,12 @@ void Main() {
                 engine.viturs_map[vitur_id] = engine.viturs.size();
                 vitur v = engine.vitur_list[engine.vitur_string_map[mode]];
 //                TODO: find a _server or purchase
-//                policy: 找到第一个能用的服务器
-                int server_id;
                 auto& servers = engine.servers;
                 bool flag = false;
                 int server_index = 0;
-                for (auto &_server: servers) {
+                policy_pick_server(v,servers, server_index, flag);
+                if(flag == true) {
+                    auto& _server = servers[server_index];
                     if (v.double_node && _server.left_core >= v.core / 2 && _server.left_mem >= v.mem / 2
                         && _server.right_core >= v.core / 2 && _server.right_mem >= v.mem / 2) {
                         _server.left_core -= v.core / 2;
@@ -420,8 +567,8 @@ void Main() {
                         _vitur _v(mode, v.core, v.mem, v.double_node, vitur_id, server_index);
                         engine.viturs.push_back(_v);
                         deploy_plan.push_back({server_index, 0});
-                        flag = true;
-                        break;
+//                        flag = true;
+//                        break;
                     } else if (_server.left_core >= _server.right_core) {
                         if (!v.double_node && _server.left_core >= v.core && _server.left_mem >= v.mem) {
                             _server.left_core -= v.core;
@@ -430,8 +577,8 @@ void Main() {
                             _vitur _v(mode, v.core, v.mem, v.double_node, vitur_id, server_index, 1);
                             engine.viturs.push_back(_v);
                             deploy_plan.push_back({server_index, 1});
-                            flag = true;
-                            break;
+//                            flag = true;
+//                            break;
                         } else if (!v.double_node && _server.right_core >= v.core && _server.right_mem >= v.mem) {
                             _server.right_core -= v.core;
                             _server.right_mem -= v.mem;
@@ -439,8 +586,8 @@ void Main() {
                             _vitur _v(mode, v.core, v.mem, v.double_node, vitur_id, server_index, 2);
                             engine.viturs.push_back(_v);
                             deploy_plan.push_back({server_index, 2});
-                            flag = true;
-                            break;
+//                            flag = true;
+//                            break;
                         }
                 }else{
                         if (!v.double_node && _server.right_core >= v.core && _server.right_mem >= v.mem) {
@@ -450,8 +597,8 @@ void Main() {
                             _vitur _v(mode, v.core, v.mem, v.double_node, vitur_id, server_index, 2);
                             engine.viturs.push_back(_v);
                             deploy_plan.push_back({server_index, 2});
-                            flag = true;
-                            break;
+//                            flag = true;
+//                            break;
                         }else if (!v.double_node && _server.left_core >= v.core && _server.left_mem >= v.mem) {
                             _server.left_core -= v.core;
                             _server.left_mem -= v.mem;
@@ -459,18 +606,20 @@ void Main() {
                             _vitur _v(mode, v.core, v.mem, v.double_node, vitur_id, server_index, 1);
                             engine.viturs.push_back(_v);
                             deploy_plan.push_back({server_index, 1});
-                            flag = true;
-                            break;
+//                            flag = true;
+//                            break;
                         }
                     }
-                    server_index += 1;
+//                    server_index += 1;
                 }
-//                TODO: not find, should purchase now!
+//                TODO: not find, should purc/hase now!
                 if (!flag) {
-                    for (int i = 0; i < N; i++) {
-                        auto server = engine.server_list[server_ids[i]];
+                    int purchase_id = policy_purchase_server(v,server_ids,engine.server_list);
+//                    assert(purchase_id != -1);
+                    if(purchase_id != -1) {
+                        auto server = engine.server_list[purchase_id];
                         if (v.double_node && server.core >= v.core && server.mem >= v.mem) {
-                            purchase_plan[server_ids[i]] += 1;
+                            purchase_plan[purchase_id] += 1;
                             _server _s(server.mode, server.core, server.mem, server.hard_cost, server.soft_cost, engine.servers.size());
                             _s.left_core -= v.core / 2;
                             _s.left_mem -= v.mem / 2;
@@ -480,10 +629,10 @@ void Main() {
                             engine.servers.push_back(_s);
                             _vitur _v(mode, v.core, v.mem, v.double_node, vitur_id, engine.servers.size() - 1);
                             engine.viturs.push_back(_v);
-                            deploy_plan.push_back({server_index, 0});
-                            break;
+                            deploy_plan.push_back({engine.servers.size() - 1, 0});
+//                            break;
                         } else if (!v.double_node && server.core / 2 >= v.core && server.mem / 2 >= v.mem) {
-                            purchase_plan[server_ids[i]] += 1;
+                            purchase_plan[purchase_id] += 1;
                             _server _s(server.mode, server.core, server.mem, server.hard_cost, server.soft_cost, engine.servers.size());
                             _s.left_core -= v.core;
                             _s.left_mem -= v.mem;
@@ -491,8 +640,8 @@ void Main() {
                             engine.servers.push_back(_s);
                             _vitur _v(mode, v.core, v.mem, v.double_node, vitur_id, engine.servers.size() - 1, 1);
                             engine.viturs.push_back(_v);
-                            deploy_plan.push_back({server_index, 1});
-                            break;
+                            deploy_plan.push_back({engine.servers.size() - 1, 1});
+//                            break;
                         }
                     }
                 }
@@ -577,9 +726,9 @@ void Main() {
 //training_1 and training_2 cannot define at the same time!
 //提交前必须注释这几行 以及 所有DEBUG定义语句!
 //#define training_1
-#define training_2
+//#define training_2
 //#define sample
-#define CLOCK
+//#define CLOCK
 int main() {
     // TODO:read standard input
     // TODO:process
