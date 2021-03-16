@@ -9,6 +9,8 @@
 #include <ctime>
 using namespace std;
 typedef long long ll;
+#define migrate_max_consider 1000
+#define consider_times 2
 #define core_mem_eps 4.5
 //提交前务必确保DEBUG定义被注释
 //#define DEBUG
@@ -327,6 +329,14 @@ int policy_purchase_server(vitur v,vector<int> server_ids,vector<server> server_
     for(auto id: server_ids)
     {
         auto server = server_list[id];
+        if (server.core >= v.core * consider_times && server.mem >= v.mem * consider_times)
+        {
+            return id;
+        }
+    }
+    for(auto id: server_ids)
+    {
+        auto server = server_list[id];
         if (v.double_node && server.core >= v.core && server.mem >= v.mem)
         {
             return id;
@@ -444,7 +454,7 @@ void Main() {
             int& right_server_right_mem_left = right_server.right_mem;
             Node* key = head;
             Node* last_key = NULL;
-            for(int i = 0; i < 1000; i++)
+            for(int i = 0; i < migrate_max_consider; i++)
             {
                 if(key == NULL)break;
                 if(key->id == id){
