@@ -9,9 +9,7 @@
 #include <ctime>
 using namespace std;
 typedef long long ll;
-#define price_eps 1000
 #define core_mem_eps 4.5
-#define EPS -1
 //提交前务必确保DEBUG定义被注释
 //#define DEBUG
 
@@ -225,6 +223,9 @@ struct Node
     Node(int id):id(id){next = NULL;}
 };
 
+//trick:部署服务器策略
+//        对于cpu > mem的虚拟机，优先考虑剩余cpu > mem的服务器
+//        对于cpu < mem的虚拟机同理
 void policy_pick_server(vitur v, vector<_server>&servers, int& server_index, bool &flag)
 {
      int count = -1;
@@ -319,21 +320,10 @@ void policy_pick_server(vitur v, vector<_server>&servers, int& server_index, boo
     }
 }
 
+//trick:购买服务器策略
+//        按照预计总消费从前往后找第一个符合要求的服务器购买
 int policy_purchase_server(vitur v,vector<int> server_ids,vector<server> server_list)
 {
-    for(auto id: server_ids)
-    {
-        auto server = server_list[id];
-        if(abs(server.core_mem - v.core_mem) > EPS)continue;
-        if (v.double_node && server.core >= v.core && server.mem >= v.mem)
-        {
-            return id;
-        }
-        else if (!v.double_node && server.core / 2 >= v.core && server.mem / 2 >= v.mem)
-        {
-            return id;
-        }
-    }
     for(auto id: server_ids)
     {
         auto server = server_list[id];
@@ -403,7 +393,8 @@ void Main() {
         vector<int> purchase_plan(engine.N, 0);
 
 //        trick: 迁移策略，先迁移，后采购部署
-//                迁移目的服务器尽量选择剩余核心数少的，原服务器尽量选择使用核心数少的
+//                迁移目的服务器尽量选择剩余核心数少的
+//                原服务器尽量选择使用虚拟机少，若虚拟机数量一致，则优先考虑服务器核心数多的
         vector<pair<int,pair<int,int> > > migrate_details;
         int cur_migrate = 0;
         int max_migrate = engine.total_viturs * 5 / 1000;
@@ -415,8 +406,15 @@ void Main() {
         {
             servers_ids[i] = i;
         }
-        sort(servers_ids.begin(), servers_ids.end(),[&](int x,int y){
-            return servers[x].core / 2 - servers[x].left_core < servers[y].core / 2 - servers[y].left_core;
+//        sort(servers_ids.begin(), servers_ids.end(),[&](int x,int y){
+//            return servers[x].core / 2 - servers[x].left_core < servers[y].core / 2 - servers[y].left_core;
+//        });
+        sort(servers_ids.begin(), servers_ids.end(), [&](int x,int y){
+            if(servers[x].vitur_ids.size() == servers[y].vitur_ids.size())
+            {
+                return servers[x].core > servers[y].core;
+            }
+            return servers[x].vitur_ids.size() < servers[y].vitur_ids.size();
         });
         Node* head = NULL;
         Node* cur = NULL;
@@ -435,7 +433,7 @@ void Main() {
             }
         }
         sort(servers_ids.begin(), servers_ids.end(),[&](int x,int y){
-            return servers[x].left_core < servers[y].left_core;
+            return servers[x].left_core  < servers[y].left_core;
         });
         for(auto id:servers_ids)
         {
