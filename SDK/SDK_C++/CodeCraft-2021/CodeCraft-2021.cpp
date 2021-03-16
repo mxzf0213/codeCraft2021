@@ -227,50 +227,52 @@ struct Node
 
 void policy_pick_server(vitur v, vector<_server>&servers, int& server_index, bool &flag)
 {
-     int count = 0;
+     int count = -1;
      for(auto& _server: servers)
      {
-         if(abs(v.core_mem - _server.core_mem) <= EPS)
+         count+=1;
+         if (v.double_node && _server.left_core >= v.core / 2 && _server.left_mem >= v.mem / 2
+             && _server.right_core >= v.core / 2 && _server.right_mem >= v.mem / 2)
          {
-             if (v.double_node && _server.left_core >= v.core / 2 && _server.left_mem >= v.mem / 2
-                 && _server.right_core >= v.core / 2 && _server.right_mem >= v.mem / 2)
+             if((v.core > v.mem) ^ (_server.left_core > _server.left_mem))continue;
+             server_index = count;
+             flag = true;
+             return;
+         }
+         else if (_server.left_core >= _server.right_core)
+         {
+             if (!v.double_node && _server.left_core >= v.core && _server.left_mem >= v.mem)
              {
+                 if((v.core > v.mem) ^ (_server.left_core > _server.left_mem))continue;
                  server_index = count;
                  flag = true;
                  return;
              }
-             else if (_server.left_core >= _server.right_core)
+             else if (!v.double_node && _server.right_core >= v.core && _server.right_mem >= v.mem)
              {
-                 if (!v.double_node && _server.left_core >= v.core && _server.left_mem >= v.mem)
-                 {
-                     server_index = count;
-                     flag = true;
-                     return;
-                 }
-                 else if (!v.double_node && _server.right_core >= v.core && _server.right_mem >= v.mem)
-                 {
-                     server_index = count;
-                     flag = true;
-                     return;
-                 }
-             }
-             else
-             {
-                 if (!v.double_node && _server.right_core >= v.core && _server.right_mem >= v.mem)
-                 {
-                     server_index = count;
-                     flag = true;
-                     return;
-                 }
-                 else if (!v.double_node && _server.left_core >= v.core && _server.left_mem >= v.mem)
-                 {
-                     server_index = count;
-                     flag = true;
-                     return;
-                 }
+                 if((v.core > v.mem) ^ (_server.right_core > _server.right_mem))continue;
+                 server_index = count;
+                 flag = true;
+                 return;
              }
          }
-         count += 1;
+         else
+         {
+             if (!v.double_node && _server.right_core >= v.core && _server.right_mem >= v.mem)
+             {
+                 if((v.core > v.mem) ^ (_server.right_core > _server.right_mem))continue;
+                 server_index = count;
+                 flag = true;
+                 return;
+             }
+             else if (!v.double_node && _server.left_core >= v.core && _server.left_mem >= v.mem)
+             {
+                 if((v.core > v.mem) ^ (_server.left_core > _server.left_mem))continue;
+                 server_index = count;
+                 flag = true;
+                 return;
+             }
+         }
      }
      if(flag)return;
      count = 0;
