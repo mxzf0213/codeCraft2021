@@ -10,8 +10,9 @@
 using namespace std;
 typedef long long ll;
 #define migrate_max_consider 1000
-#define consider_times 2
+#define consider_times 2.64
 #define core_mem_eps 4.5
+#define ACTIVATE_MIGRATE
 //提交前务必确保DEBUG定义被注释
 //#define DEBUG
 
@@ -409,6 +410,7 @@ void Main() {
         int cur_migrate = 0;
         int max_migrate = engine.total_viturs * 5 / 1000;
 
+#ifdef ACTIVATE_MIGRATE
         auto& servers = engine.servers;
         auto& viturs = engine.viturs;
         vector<int> servers_ids(servers.size());
@@ -529,7 +531,7 @@ void Main() {
             free(cur);
             cur = nt;
         }
-
+#endif
         while (R--) {
             pair<string, int> r = ioEngine.read_request();
             string mode = r.first;
