@@ -12,9 +12,9 @@ typedef long long ll;
 #define migrate_max_consider 1000
 #define consider_times 2.64
 #define core_mem_eps 4.5
-#define ACTIVATE_MIGRATE
+//#define ACTIVATE_MIGRATE
 //提交前务必确保DEBUG定义被注释
-//#define DEBUG
+#define DEBUG
 
 //服务器
 class server {
@@ -350,6 +350,112 @@ int policy_purchase_server(vitur v,vector<int> server_ids,vector<server> server_
     return -1;
 }
 
+void dynamic_purchase(vector<pair<int,int> >& purchase_list, vector<int>& purchase_plan, vector<server>& server_list,
+                      vector<int>& server_ids,vector<pair<int,int> >& deploy_plan,
+                      vector<_vitur>& viturs, vector<_server>& servers,int T)
+{
+    int purchase_size = purchase_list.size();
+    vector<int> sorted_purchase_ids(purchase_size);
+    for(int i=0;i < purchase_size; i++)sorted_purchase_ids[i] = i;
+//    sort(sorted_purchase_ids.begin(), sorted_purchase_ids.end(),[&](int x,int y){
+//        return viturs[purchase_list[x].first].core + viturs[purchase_list[x].first].mem
+//            < viturs[purchase_list[y].first].core + viturs[purchase_list[y].first].mem;
+//    });
+    vector<int> dp(purchase_size + 1, 1e9);
+    vector<vector<int> > memory(purchase_size + 1);
+    dp[0] = 0;
+    for(int i=0;i<purchase_size;i++)
+    {
+        if(dp[i] >= 1e9)continue;
+        int max_left_core = 0, max_right_core = 0;
+        int max_left_mem = 0, max_right_mem = 0;
+        vector<int> cur_deploy_plan;
+        for(int j=i;j<purchase_size;j++)
+        {
+            int idx = sorted_purchase_ids[j];
+            auto cur_vitur = viturs[purchase_list[idx].first];
+            if(cur_vitur.double_node)
+            {
+                max_left_core += cur_vitur.core / 2;
+                max_right_core += cur_vitur.core / 2;
+                max_left_mem += cur_vitur.mem / 2;
+                max_right_mem += cur_vitur.mem / 2;
+                cur_deploy_plan.push_back(0);
+            } else
+            {
+                if(max_left_core > max_right_core)
+                {
+                    max_right_core += cur_vitur.core;
+                    max_right_mem += cur_vitur.mem;
+                    cur_deploy_plan.push_back(2);
+                } else
+                {
+                    max_left_core += cur_vitur.core;
+                    max_left_mem += cur_vitur.mem;
+                    cur_deploy_plan.push_back(1);
+                }
+            }
+            for(auto server_id: server_ids)
+            {
+                if(server_list[server_id].core >= max(max_left_core, max_right_core) * 4
+                    && server_list[server_id].mem >= max(max_left_mem, max_right_mem) * 4)
+                {
+                    cur_deploy_plan.push_back(server_id);
+//                    TODO: 是否加入soft_cost
+                    if(dp[j+1] > dp[i] + server_list[server_id].hard_cost + T*server_list[server_id].soft_cost)
+                    {
+                        dp[j+1] = dp[i] + server_list[server_id].hard_cost + T*server_list[server_id].soft_cost;
+                        memory[j+1] = cur_deploy_plan;
+                    }
+                    cur_deploy_plan.pop_back();
+                }
+            }
+        }
+    }
+    int pos = purchase_size;
+    while(pos)
+    {
+        vector<int> cur_deploy_plan = memory[pos];
+        int server_id = cur_deploy_plan.back();
+        purchase_plan[server_id] += 1;
+        cur_deploy_plan.pop_back();
+        int size = cur_deploy_plan.size();
+        auto server = server_list[server_id];
+        _server _s(server.mode, server.core, server.mem, server.hard_cost, server.soft_cost, servers.size());
+        while(size--)
+        {
+            int idx = sorted_purchase_ids[pos - 1];
+            auto purchase_vitur = purchase_list[idx];
+            int vitur_pos = purchase_vitur.first;
+            int deploy_pos = purchase_vitur.second;
+            deploy_plan[deploy_pos].first = servers.size();
+            int node_id = cur_deploy_plan.back();
+            cur_deploy_plan.pop_back();
+            deploy_plan[deploy_pos].second = node_id;
+            auto& cur_vitur = viturs[vitur_pos];
+            cur_vitur.server_id = servers.size();
+            cur_vitur.deploy_node = node_id;
+            if(node_id == 1)
+            {
+                _s.left_core -= cur_vitur.core;
+                _s.left_mem -= cur_vitur.mem;
+            } else if(node_id == 2)
+            {
+                _s.right_core -= cur_vitur.core;
+                _s.right_mem -= cur_vitur.mem;
+            } else {
+                _s.left_core -= cur_vitur.core /2;
+                _s.right_core -= cur_vitur.core /2;
+                _s.left_mem -= cur_vitur.mem/2;
+                _s.right_mem -= cur_vitur.mem/2;
+            }
+            _s.vitur_ids.insert(cur_vitur.id);
+            pos -= 1;
+        }
+        servers.push_back(_s);
+    }
+}
+
 void Main() {
     Engine engine;
     IoEngine ioEngine;
@@ -402,6 +508,7 @@ void Main() {
         int add_op = 0;
         vector<pair<int, int> > deploy_plan;
         vector<int> purchase_plan(engine.N, 0);
+        vector<pair<int,int> > purchase_list;
 
 //        trick: 迁移策略，先迁移，后采购部署
 //                迁移目的服务器尽量选择剩余核心数少的
@@ -624,41 +731,17 @@ void Main() {
                     }
 //                    server_index += 1;
                 }
-//                TODO: not find, should purc/hase now!
+//                TODO: not find, should purchase now!
                 if (!flag) {
-                    int purchase_id = policy_purchase_server(v,server_ids,engine.server_list);
-//                    assert(purchase_id != -1);
-                    if(purchase_id != -1) {
-                        auto server = engine.server_list[purchase_id];
-                        if (v.double_node && server.core >= v.core && server.mem >= v.mem) {
-                            purchase_plan[purchase_id] += 1;
-                            _server _s(server.mode, server.core, server.mem, server.hard_cost, server.soft_cost, engine.servers.size());
-                            _s.left_core -= v.core / 2;
-                            _s.left_mem -= v.mem / 2;
-                            _s.right_core -= v.core / 2;
-                            _s.right_mem -= v.mem / 2;
-                            _s.vitur_ids.insert(vitur_id);
-                            engine.servers.push_back(_s);
-                            _vitur _v(mode, v.core, v.mem, v.double_node, vitur_id, engine.servers.size() - 1);
-                            engine.viturs.push_back(_v);
-                            deploy_plan.push_back({engine.servers.size() - 1, 0});
-//                            break;
-                        } else if (!v.double_node && server.core / 2 >= v.core && server.mem / 2 >= v.mem) {
-                            purchase_plan[purchase_id] += 1;
-                            _server _s(server.mode, server.core, server.mem, server.hard_cost, server.soft_cost, engine.servers.size());
-                            _s.left_core -= v.core;
-                            _s.left_mem -= v.mem;
-                            _s.vitur_ids.insert(vitur_id);
-                            engine.servers.push_back(_s);
-                            _vitur _v(mode, v.core, v.mem, v.double_node, vitur_id, engine.servers.size() - 1, 1);
-                            engine.viturs.push_back(_v);
-                            deploy_plan.push_back({engine.servers.size() - 1, 1});
-//                            break;
-                        }
-                    }
+                    deploy_plan.push_back({0, 0});
+                    _vitur _v(mode, v.core, v.mem, v.double_node, vitur_id, -1, -1);
+                    engine.viturs.push_back(_v);
+                    purchase_list.push_back({engine.viturs.size() - 1, deploy_plan.size() - 1});
                 }
             }
         }
+        dynamic_purchase(purchase_list, purchase_plan, engine.server_list, server_ids,
+                         deploy_plan, engine.viturs, engine.servers, T);
 //        TODO: reorder, 根据购买规则需要对新添加的服务器重新排序
 //            修改内容包括添加的服务器，添加的虚拟机，部署计划
         int servers_size = engine.servers.size();
@@ -737,10 +820,10 @@ void Main() {
 
 //training_1 and training_2 cannot define at the same time!
 //提交前必须注释这几行 以及 所有DEBUG定义语句!
-//#define training_1
+#define training_1
 //#define training_2
 //#define sample
-//#define CLOCK
+#define CLOCK
 int main() {
     // TODO:read standard input
     // TODO:process
