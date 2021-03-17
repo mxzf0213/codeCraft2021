@@ -23,6 +23,7 @@ def read_txt(path: str):
         for i in range(M):
             virtu_list.append(f.readline().rstrip().lstrip('(').rstrip(')').split(", "))
         T = int(f.readline())
+
         for i in range(T):
             R = int(f.readline())
             for j in range(R):
