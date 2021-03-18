@@ -11,6 +11,7 @@ using namespace std;
 typedef long long ll;
 #define migrate_max_consider 1000
 #define consider_times 2.64
+
 #define core_mem_eps 4.5
 #define pick_weight 0.32
 #define ACTIVATE_MIGRATE
@@ -397,7 +398,8 @@ void Main() {
             }
         }
         sort(servers_ids.begin(), servers_ids.end(), [&](int x, int y) {
-            return servers[x].left_core < servers[y].left_core;
+            return servers[x].left_core + servers[x].right_core <
+                   servers[y].left_core + servers[y].right_core;
         });
         for (auto id:servers_ids) {
             auto &right_server = servers[id];
