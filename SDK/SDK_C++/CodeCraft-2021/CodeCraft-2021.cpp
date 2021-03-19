@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstring>
 #include <ctime>
+#include <cassert>
 
 using namespace std;
 typedef long long ll;
@@ -309,6 +310,129 @@ int policy_purchase_server(vitur v, vector<int> server_ids, vector<server> serve
     return -1;
 }
 
+//trick:离线购买服务器策略
+//       最佳适应下降算法
+void dynamic_purchase(vector<pair<int,int> >& purchase_list, vector<int>& purchase_plan, vector<server>& server_list,
+                      vector<int>& server_ids,vector<pair<int,int> >& deploy_plan,
+                      vector<_vitur>& viturs, vector<_server>& servers)
+{
+    int purchase_size = purchase_list.size();
+    vector<int> sorted_purchase_ids(purchase_size);
+    for(int i=0;i < purchase_size; i++)sorted_purchase_ids[i] = i;
+//    按照需要资源从高到低进行排序
+    sort(sorted_purchase_ids.begin(), sorted_purchase_ids.end(),[&](int x,int y){
+        return viturs[purchase_list[x].first].core + viturs[purchase_list[x].first].mem
+            > viturs[purchase_list[y].first].core + viturs[purchase_list[y].first].mem;
+    });
+//    当前必须要购买，所以必须从服务器最后位置遍历
+    int start_pos = servers.size();
+    for(int i=0;i<purchase_size;i++)
+    {
+        auto cur_purchase = purchase_list[sorted_purchase_ids[i]];
+        auto& v = viturs[cur_purchase.first];
+        auto& _deploy = deploy_plan[cur_purchase.second];
+        int remain = 1e9;
+        int server_index = -1;
+        bool flag = false;
+        bool is_left = true;
+        for(int j = start_pos;j < servers.size();j++)
+        {
+            auto& _server = servers[j];
+            // 单节点部署
+            if (!v.double_node) {
+                // 判断左节点是否可放
+                if (_server.left_core >= v.core && _server.left_mem >= v.mem) {
+                    int cur_remain = (_server.left_core - v.core) + pick_weight * (_server.left_mem - v.mem);
+                    if (cur_remain < remain) {
+                        remain = cur_remain;
+                        server_index = j;
+                        flag = true;
+                        is_left = true;
+                    }
+                }
+                // 判断右节点
+                if (_server.right_core >= v.core && _server.right_mem >= v.mem) {
+                    int cur_remain = (_server.right_core - v.core) + pick_weight * (_server.right_mem - v.mem);
+                    if (cur_remain < remain) {
+                        remain = cur_remain;
+                        server_index = j;
+                        flag = true;
+                        is_left = false;
+                    }
+                }
+            }
+                // 双节点部署
+            else {
+                // 判断双节点资源是否都满足要求
+                if (_server.left_core >= v.core / 2 && _server.left_mem >= v.mem / 2 && _server.right_core >= v.core / 2 &&
+                    _server.right_mem >= v.mem / 2) {
+                    int cur_remain = (_server.left_core - v.core / 2) + pick_weight * (_server.left_mem - v.mem / 2) +
+                                     (_server.right_core - v.core / 2) + pick_weight * (_server.right_mem - v.mem / 2);
+                    if (cur_remain < remain) {
+                        remain = cur_remain;
+                        server_index = j;
+                        flag = true;
+                    }
+                }
+            }
+        }
+        if(!flag)
+        {
+            bool flag2 = false;
+            int best_id;
+            for (auto id: server_ids) {
+                auto server = server_list[id];
+                if (server.core >= v.core * consider_times && server.mem >= v.mem * consider_times) {
+                    flag2 = true;
+                    best_id = id;
+                    break;
+                }
+            }
+            if(!flag2) {
+                for (auto id: server_ids) {
+                    auto server = server_list[id];
+                    if (v.double_node && server.core >= v.core && server.mem >= v.mem) {
+                        best_id = id;
+                        break;
+                    } else if (!v.double_node && server.core / 2 >= v.core && server.mem / 2 >= v.mem) {
+                        best_id = id;
+                        break;
+                    }
+                }
+            }
+            auto server = server_list[best_id];
+            purchase_plan[best_id] += 1;
+            _server _s(server.mode, server.core, server.mem, server.hard_cost, server.soft_cost,
+                       servers.size());
+            servers.push_back(_s);
+            server_index = servers.size() -1;
+        }
+        v.server_id = server_index;
+        auto& _server = servers[server_index];
+        _server.vitur_ids.insert(v.id);
+        _deploy.first = server_index;
+        if(v.double_node)
+        {
+            _server.left_core -= v.core /2;
+            _server.right_core -= v.core /2;
+            _server.left_mem -= v.mem/2;
+            _server.right_mem -= v.mem/2;
+            _deploy.second = 0;
+            v.deploy_node = 0;
+        } else if(is_left) {
+            _server.left_core -= v.core;
+            _server.left_mem -= v.mem;
+            _deploy.second = 1;
+            v.deploy_node = 1;
+        } else {
+            _server.right_core -= v.core;
+            _server.right_mem -= v.mem;
+            _deploy.second = 2;
+            v.deploy_node = 2;
+        }
+    }
+}
+
 void Main() {
     Engine engine;
     IoEngine ioEngine;
@@ -362,7 +486,7 @@ void Main() {
         int add_op = 0;
         vector<pair<int, int> > deploy_plan;
         vector<int> purchase_plan(engine.N, 0);
-
+        vector<pair<int,int> > purchase_list;
 //        trick: 迁移策略，先迁移，后采购部署
 //                迁移目的服务器尽量选择剩余核心数少的
 //                原服务器尽量选择使用虚拟机少，若虚拟机数量一致，则优先考虑服务器核心数多的
@@ -559,38 +683,15 @@ void Main() {
                 }
 //                TODO: not find, should purc/hase now!
                 if (!flag) {
-                    int purchase_id = policy_purchase_server(v, server_ids, engine.server_list);
-                    if (purchase_id != -1) {
-                        auto server = engine.server_list[purchase_id];
-                        if (v.double_node && server.core >= v.core && server.mem >= v.mem) {
-                            purchase_plan[purchase_id] += 1;
-                            _server _s(server.mode, server.core, server.mem, server.hard_cost, server.soft_cost,
-                                       engine.servers.size());
-                            _s.left_core -= v.core / 2;
-                            _s.left_mem -= v.mem / 2;
-                            _s.right_core -= v.core / 2;
-                            _s.right_mem -= v.mem / 2;
-                            _s.vitur_ids.insert(vitur_id);
-                            engine.servers.push_back(_s);
-                            _vitur _v(mode, v.core, v.mem, v.double_node, vitur_id, engine.servers.size() - 1);
-                            engine.viturs.push_back(_v);
-                            deploy_plan.push_back({engine.servers.size() - 1, 0});
-                        } else if (!v.double_node && server.core / 2 >= v.core && server.mem / 2 >= v.mem) {
-                            purchase_plan[purchase_id] += 1;
-                            _server _s(server.mode, server.core, server.mem, server.hard_cost, server.soft_cost,
-                                       engine.servers.size());
-                            _s.left_core -= v.core;
-                            _s.left_mem -= v.mem;
-                            _s.vitur_ids.insert(vitur_id);
-                            engine.servers.push_back(_s);
-                            _vitur _v(mode, v.core, v.mem, v.double_node, vitur_id, engine.servers.size() - 1, 1);
-                            engine.viturs.push_back(_v);
-                            deploy_plan.push_back({engine.servers.size() - 1, 1});
-                        }
-                    }
+                    deploy_plan.push_back({0, 0});
+                    _vitur _v(mode, v.core, v.mem, v.double_node, vitur_id, -1, -1);
+                    engine.viturs.push_back(_v);
+                    purchase_list.push_back({engine.viturs.size() - 1, deploy_plan.size() - 1});
                 }
             }
         }
+        dynamic_purchase(purchase_list, purchase_plan, engine.server_list, server_ids,
+                         deploy_plan, engine.viturs, engine.servers);
 //        TODO: reorder, 根据购买规则需要对新添加的服务器重新排序
 //            修改内容包括添加的服务器，添加的虚拟机，部署计划
         int servers_size = engine.servers.size();
