@@ -45,13 +45,14 @@ public:
     int left_core, left_mem;
     int right_core, right_mem;
     unordered_set<int> vitur_ids;
-
+    bool can_move;
     _server() {}
 
     _server(string mode, int core, int mem, int hard_cost, int soft_cost, int index) :
             server(mode, core, mem, hard_cost, soft_cost), index(index) {
         left_core = right_core = core / 2;
         left_mem = right_mem = mem / 2;
+        can_move = true;
     }
 };
 
@@ -76,11 +77,16 @@ public:
     int id;
     int server_id;
     int deploy_node;
+    bool alive;
+    bool can_move;
 
     _vitur() {}
 
     _vitur(string mode, int core, int mem, bool double_node, int id, int server_id, int deploy_node = 0) :
-            vitur(mode, core, mem, double_node), id(id), server_id(server_id), deploy_node(deploy_node) {}
+            vitur(mode, core, mem, double_node), id(id), server_id(server_id), deploy_node(deploy_node) {
+        alive = true;
+        can_move = true;
+    }
 };
 
 //维护数据中心资源
@@ -312,32 +318,29 @@ int policy_purchase_server(vitur v, vector<int> server_ids, vector<server> serve
 
 //trick:离线购买服务器策略
 //       最佳适应下降算法
-void dynamic_purchase(vector<pair<int,int> >& purchase_list, vector<int>& purchase_plan, vector<server>& server_list,
-                      vector<int>& server_ids,vector<pair<int,int> >& deploy_plan,
-                      vector<_vitur>& viturs, vector<_server>& servers)
-{
+void dynamic_purchase(vector<pair<int, int> > &purchase_list, vector<int> &purchase_plan, vector<server> &server_list,
+                      vector<int> &server_ids, vector<pair<int, int> > &deploy_plan,
+                      vector<_vitur> &viturs, vector<_server> &servers) {
     int purchase_size = purchase_list.size();
     vector<int> sorted_purchase_ids(purchase_size);
-    for(int i=0;i < purchase_size; i++)sorted_purchase_ids[i] = i;
+    for (int i = 0; i < purchase_size; i++)sorted_purchase_ids[i] = i;
 //    按照需要资源从高到低进行排序
-    sort(sorted_purchase_ids.begin(), sorted_purchase_ids.end(),[&](int x,int y){
+    sort(sorted_purchase_ids.begin(), sorted_purchase_ids.end(), [&](int x, int y) {
         return viturs[purchase_list[x].first].core + viturs[purchase_list[x].first].mem
-            > viturs[purchase_list[y].first].core + viturs[purchase_list[y].first].mem;
+               > viturs[purchase_list[y].first].core + viturs[purchase_list[y].first].mem;
     });
 //    当前必须要购买，所以必须从服务器最后位置遍历
     int start_pos = servers.size();
-    for(int i=0;i<purchase_size;i++)
-    {
+    for (int i = 0; i < purchase_size; i++) {
         auto cur_purchase = purchase_list[sorted_purchase_ids[i]];
-        auto& v = viturs[cur_purchase.first];
-        auto& _deploy = deploy_plan[cur_purchase.second];
+        auto &v = viturs[cur_purchase.first];
+        auto &_deploy = deploy_plan[cur_purchase.second];
         int remain = 1e9;
         int server_index = -1;
         bool flag = false;
         bool is_left = true;
-        for(int j = start_pos;j < servers.size();j++)
-        {
-            auto& _server = servers[j];
+        for (int j = start_pos; j < servers.size(); j++) {
+            auto &_server = servers[j];
             // 单节点部署
             if (!v.double_node) {
                 // 判断左节点是否可放
@@ -364,7 +367,8 @@ void dynamic_purchase(vector<pair<int,int> >& purchase_list, vector<int>& purcha
                 // 双节点部署
             else {
                 // 判断双节点资源是否都满足要求
-                if (_server.left_core >= v.core / 2 && _server.left_mem >= v.mem / 2 && _server.right_core >= v.core / 2 &&
+                if (_server.left_core >= v.core / 2 && _server.left_mem >= v.mem / 2 &&
+                    _server.right_core >= v.core / 2 &&
                     _server.right_mem >= v.mem / 2) {
                     int cur_remain = (_server.left_core - v.core / 2) + pick_weight * (_server.left_mem - v.mem / 2) +
                                      (_server.right_core - v.core / 2) + pick_weight * (_server.right_mem - v.mem / 2);
@@ -376,8 +380,7 @@ void dynamic_purchase(vector<pair<int,int> >& purchase_list, vector<int>& purcha
                 }
             }
         }
-        if(!flag)
-        {
+        if (!flag) {
             bool flag2 = false;
             int best_id;
             for (auto id: server_ids) {
@@ -388,7 +391,7 @@ void dynamic_purchase(vector<pair<int,int> >& purchase_list, vector<int>& purcha
                     break;
                 }
             }
-            if(!flag2) {
+            if (!flag2) {
                 for (auto id: server_ids) {
                     auto server = server_list[id];
                     if (v.double_node && server.core >= v.core && server.mem >= v.mem) {
@@ -405,21 +408,20 @@ void dynamic_purchase(vector<pair<int,int> >& purchase_list, vector<int>& purcha
             _server _s(server.mode, server.core, server.mem, server.hard_cost, server.soft_cost,
                        servers.size());
             servers.push_back(_s);
-            server_index = servers.size() -1;
+            server_index = servers.size() - 1;
         }
         v.server_id = server_index;
-        auto& _server = servers[server_index];
+        auto &_server = servers[server_index];
         _server.vitur_ids.insert(v.id);
         _deploy.first = server_index;
-        if(v.double_node)
-        {
-            _server.left_core -= v.core /2;
-            _server.right_core -= v.core /2;
-            _server.left_mem -= v.mem/2;
-            _server.right_mem -= v.mem/2;
+        if (v.double_node) {
+            _server.left_core -= v.core / 2;
+            _server.right_core -= v.core / 2;
+            _server.left_mem -= v.mem / 2;
+            _server.right_mem -= v.mem / 2;
             _deploy.second = 0;
             v.deploy_node = 0;
-        } else if(is_left) {
+        } else if (is_left) {
             _server.left_core -= v.core;
             _server.left_mem -= v.mem;
             _deploy.second = 1;
@@ -431,6 +433,180 @@ void dynamic_purchase(vector<pair<int,int> >& purchase_list, vector<int>& purcha
             v.deploy_node = 2;
         }
     }
+}
+
+int binary_search(vector<_vitur>& viturs, vector<int>& viturs_ids,_server _s)
+{
+    int l = 0, r = viturs_ids.size() - 1;
+    int ret = -1;
+    int povit = min(_s.left_core, _s.right_core);
+    while(l<=r)
+    {
+        int mid = l + r >> 1;
+        if(povit >= viturs[viturs_ids[mid]].core /2)
+        {
+            ret = mid;
+            l = mid+1;
+        } else r = mid -1;
+    }
+    return ret;
+}
+
+int binary_search_2(vector<_vitur>& viturs, vector<int>& viturs_ids,_server _s, bool is_left)
+{
+    int l = 0, r = viturs_ids.size() - 1;
+    int ret = -1;
+    int povit = (is_left ? _s.left_core: _s.right_core);
+    while(l<=r)
+    {
+        int mid = l + r >> 1;
+        if(povit >= viturs[viturs_ids[mid]].core)
+        {
+            ret = mid;
+            l = mid+1;
+        } else r = mid -1;
+    }
+    return ret;
+}
+
+//        trick: 迁移策略，先迁移，后采购部署
+//                迁移目的服务器尽量选择剩余核心数少的
+//                原服务器尽量选择使用虚拟机少，若虚拟机数量一致，则优先考虑服务器核心数多的
+void policy_migrate_server(vector<_server> &servers, vector<_vitur> &viturs,
+                           vector<pair<int, pair<int, int> > > &migrate_details,
+                           Engine &engine,
+                           int &max_migrate, int &cur_migrate, int &migrate_times) {
+#ifdef ACTIVATE_MIGRATE
+    vector<int> viturs_ids(viturs.size());
+    for(int i=0;i<viturs.size();i++)viturs_ids[i] = i;
+    sort(viturs_ids.begin(), viturs_ids.end(),[&](int x,int y){
+        if(servers[viturs[x].server_id].vitur_ids.size() != servers[viturs[y].server_id].vitur_ids.size())
+            return servers[viturs[x].server_id].vitur_ids.size() <
+                servers[viturs[y].server_id].vitur_ids.size();
+       return viturs[x].core > viturs[y].core;
+    });
+    vector<int> servers_ids(servers.size());
+    for(int i=0;i<servers.size();i++)servers_ids[i] = i;
+    sort(servers_ids.begin(), servers_ids.end(), [&](int x,int y){
+       return servers[x].left_core + servers[x].right_core <
+               servers[y].left_core + servers[y].right_core;
+    });
+    double weight = 0.32;
+    int count = 0;
+    for(auto v_id:viturs_ids)
+    {
+        if(!max_migrate)break;
+        auto& _vitur = viturs[v_id];
+        if(_vitur.alive == 0)continue;
+        auto& origin_server = servers[_vitur.server_id];
+        int best_id = _vitur.server_id;
+        int deploy_node = _vitur.deploy_node;
+        double remain;
+        if(_vitur.deploy_node == 0)
+            remain = (origin_server.left_core + origin_server.right_core) +
+                    weight * (origin_server.left_mem + origin_server.right_mem);
+        else if(_vitur.deploy_node == 1)
+            remain = origin_server.left_core + weight * origin_server.left_mem;
+        else
+            remain = origin_server.right_core + weight * origin_server.right_mem;
+        bool migrate_flag = false;
+        for(auto& server_id:servers_ids)
+        {
+            auto& _server = servers[server_id];
+            if(_server.index == origin_server.index && _vitur.double_node)continue;
+            else if(_server.index == origin_server.index)
+            {
+                if(_vitur.deploy_node == 1 && _vitur.core <= _server.right_core &&
+                    _vitur.mem <= _server.right_mem) {
+                    double cur_remain = (_server.right_core - _vitur.core) +
+                                    weight * (_server.right_mem - _vitur.mem);
+                    if(cur_remain < remain) {
+                        remain = cur_remain;
+                        best_id = server_id;
+                        deploy_node = 2;
+                        migrate_flag = true;
+                    }
+                }
+                if(_vitur.deploy_node == 2 && _vitur.core <= _server.left_core &&
+                   _vitur.mem <= _server.left_mem) {
+                    double cur_remain = (_server.left_core - _vitur.core) +
+                                        weight * (_server.left_mem - _vitur.mem);
+                    if(cur_remain < remain) {
+                        remain = cur_remain;
+                        best_id = server_id;
+                        deploy_node = 1;
+                        migrate_flag = true;
+                    }
+                }
+            } else {
+                if(_vitur.double_node && _vitur.core / 2 <= min(_server.left_core, _server.right_core)
+                    && _vitur.mem/2 <= min(_server.left_mem, _server.right_mem)) {
+                    double cur_remain = (_server.left_core - _vitur.core/2) + (_server.right_core - _vitur.core/2)
+                                    + weight *(_server.left_mem - _vitur.mem/2) + weight * (_server.right_mem - _vitur.mem/2);
+                    if(cur_remain < remain) {
+                        remain = cur_remain;
+                        best_id = server_id;
+                        deploy_node = 0;
+                        migrate_flag = true;
+                    }
+                }
+                if(!_vitur.double_node && _vitur.core <= _server.left_core && _vitur.mem <= _server.left_mem) {
+                    double cur_remain = (_server.left_core - _vitur.core) + weight *(_server.left_mem - _vitur.mem);
+                    if(cur_remain < remain) {
+                        remain = cur_remain;
+                        best_id = server_id;
+                        deploy_node = 1;
+                        migrate_flag = true;
+                    }
+                }
+                if(!_vitur.double_node && _vitur.core <= _server.right_core && _vitur.mem <= _server.right_mem) {
+                    double cur_remain = (_server.right_core - _vitur.core) + weight *(_server.right_mem - _vitur.mem);
+                    if(cur_remain < remain) {
+                        remain = cur_remain;
+                        best_id = server_id;
+                        deploy_node = 2;
+                        migrate_flag = true;
+                    }
+                }
+            }
+        }
+        if(migrate_flag == true) {
+            if(_vitur.double_node) {
+                origin_server.left_core += _vitur.core /2;
+                origin_server.left_mem += _vitur.mem/2;
+                origin_server.right_core += _vitur.core/2;
+                origin_server.right_mem += _vitur.mem/2;
+            } else if(_vitur.deploy_node == 1) {
+                origin_server.left_core += _vitur.core;
+                origin_server.left_mem += _vitur.mem;
+            } else {
+                origin_server.right_core += _vitur.core;
+                origin_server.right_mem += _vitur.mem;
+            }
+            origin_server.vitur_ids.erase(_vitur.id);
+            auto& new_server = servers[best_id];
+            if(deploy_node == 0) {
+                new_server.left_core -= _vitur.core/2;
+                new_server.left_mem -= _vitur.mem/2;
+                new_server.right_core -= _vitur.core/2;
+                new_server.right_mem -= _vitur.mem/2;
+            } else if(deploy_node == 1) {
+                new_server.left_core -= _vitur.core;
+                new_server.left_mem -= _vitur.mem;
+            } else {
+                new_server.right_core -= _vitur.core;
+                new_server.right_mem -= _vitur.mem;
+            }
+            new_server.vitur_ids.insert(_vitur.id);
+            _vitur.server_id = best_id;
+            _vitur.deploy_node = deploy_node;
+            migrate_details.push_back({_vitur.id, {best_id, deploy_node}});
+            max_migrate -= 1;
+            migrate_times += 1;
+            cur_migrate += 1;
+        }
+    }
+#endif
 }
 
 void Main() {
@@ -486,7 +662,7 @@ void Main() {
         int add_op = 0;
         vector<pair<int, int> > deploy_plan;
         vector<int> purchase_plan(engine.N, 0);
-        vector<pair<int,int> > purchase_list;
+        vector<pair<int, int> > purchase_list;
 //        trick: 迁移策略，先迁移，后采购部署
 //                迁移目的服务器尽量选择剩余核心数少的
 //                原服务器尽量选择使用虚拟机少，若虚拟机数量一致，则优先考虑服务器核心数多的
@@ -496,109 +672,8 @@ void Main() {
 #ifdef ACTIVATE_MIGRATE
         auto &servers = engine.servers;
         auto &viturs = engine.viturs;
-        vector<int> servers_ids(servers.size());
-        for (int i = 0; i < servers_ids.size(); i++) {
-            servers_ids[i] = i;
-        }
-//        sort(servers_ids.begin(), servers_ids.end(),[&](int x,int y){
-//            return servers[x].core / 2 - servers[x].left_core < servers[y].core / 2 - servers[y].left_core;
-//        });
-        sort(servers_ids.begin(), servers_ids.end(), [&](int x, int y) {
-            if (servers[x].vitur_ids.size() == servers[y].vitur_ids.size()) {
-                return servers[x].core > servers[y].core;
-            }
-            return servers[x].vitur_ids.size() < servers[y].vitur_ids.size();
-        });
-        Node *head = NULL;
-        Node *cur = NULL;
-        for (auto id: servers_ids) {
-            if (head == NULL) {
-                head = new Node(id);
-                cur = head;
-            } else {
-                Node *temp = new Node(id);
-                cur->next = temp;
-                cur = temp;
-            }
-        }
-        sort(servers_ids.begin(), servers_ids.end(), [&](int x, int y) {
-            return servers[x].left_core + servers[x].right_core <
-                   servers[y].left_core + servers[y].right_core;
-        });
-        for (auto id:servers_ids) {
-            auto &right_server = servers[id];
-            int &right_server_left_core_left = right_server.left_core;
-            int &right_server_right_core_left = right_server.right_core;
-            int &right_server_left_mem_left = right_server.left_mem;
-            int &right_server_right_mem_left = right_server.right_mem;
-            Node *key = head;
-            Node *last_key = NULL;
-            for (int i = 0; i < migrate_max_consider; i++) {
-                if (key == NULL)break;
-                if (key->id == id) {
-                    last_key = key;
-                    key = key->next;
-                    continue;
-                }
-                auto &left_server = servers[key->id];
-                if (left_server.vitur_ids.size() > max_migrate) {
-                    last_key = key;
-                    key = key->next;
-                    continue;
-                }
-                int left_server_left_core_used = left_server.core / 2 - left_server.left_core;
-                int left_server_right_core_used = left_server.core / 2 - left_server.right_core;
-                int left_server_left_mem_used = left_server.mem / 2 - left_server.left_mem;
-                int left_server_right_mem_used = left_server.mem / 2 - left_server.right_mem;
-                bool delete_flag = false;
-                if (left_server_left_core_used <= right_server_left_core_left &&
-                    left_server_right_core_used <= right_server_right_core_left &&
-                    left_server_left_mem_used <= right_server_left_mem_left &&
-                    left_server_right_mem_used <= right_server_right_mem_left) {
-                    for (auto vitur_id: left_server.vitur_ids) {
-                        auto &vitur = engine.viturs[engine.viturs_map[vitur_id]];
-                        vitur.server_id = id;
-                        migrate_details.push_back({vitur_id, {id, vitur.deploy_node}});
-                        max_migrate -= 1;
-                        migrate_times += 1;
-                        cur_migrate += 1;
-                        right_server.vitur_ids.insert(vitur_id);
-                    }
-                    left_server.vitur_ids.clear();
-                    left_server.left_core = left_server.core / 2;
-                    left_server.right_core = left_server.core / 2;
-                    left_server.left_mem = left_server.mem / 2;
-                    left_server.right_mem = left_server.mem / 2;
-                    right_server.left_core -= left_server_left_core_used;
-                    right_server.right_core -= left_server_right_core_used;
-                    right_server.left_mem -= left_server_left_mem_used;
-                    right_server.right_mem -= left_server_right_mem_used;
-                    if (key == head) {
-                        Node *temp = head;
-                        head = head->next;
-                        key = head;
-                        free(temp);
-                        delete_flag = true;
-                    } else {
-                        Node *temp = key;
-                        last_key->next = key->next;
-                        key = key->next;
-                        free(temp);
-                        delete_flag = true;
-                    }
-                }
-                if (!delete_flag) {
-                    last_key = key;
-                    key = key->next;
-                }
-            }
-        }
-        cur = head;
-        while (cur) {
-            Node *nt = cur->next;
-            free(cur);
-            cur = nt;
-        }
+        policy_migrate_server(servers, viturs, migrate_details, engine, max_migrate,
+                              cur_migrate, migrate_times);
 #endif
         while (R--) {
             pair<string, int> r = ioEngine.read_request();
@@ -607,10 +682,11 @@ void Main() {
 //            删除
             if (mode == "") {
                 int id = engine.viturs_map[vitur_id];
-                _vitur _v = engine.viturs[id];
+                _vitur& _v = engine.viturs[id];
 //                TODO: 释放_v所在服务器的资源
                 int server_id = _v.server_id;
                 engine.servers[server_id].vitur_ids.erase(vitur_id);
+                _v.alive = false;
                 if (_v.double_node) {
                     engine.servers[server_id].left_core += _v.core / 2;
                     engine.servers[server_id].left_mem += _v.mem / 2;
@@ -742,11 +818,16 @@ void Main() {
             ioEngine.output_deploy(plan.first, plan.second);
         }
 //        TODO: 计算每日开销
-        for (auto _server: engine.servers) {
+        for (auto& _server: engine.servers) {
             if (_server.left_core + _server.right_core < _server.core ||
                 _server.left_mem + _server.right_mem < _server.mem) {
                 daily_cost += _server.soft_cost;
             }
+            _server.can_move = true;
+        }
+        for(auto& _vitur:viturs)
+        {
+            _vitur.can_move = true;
         }
         engine.total_viturs += add_op - (_R - add_op);
     }
