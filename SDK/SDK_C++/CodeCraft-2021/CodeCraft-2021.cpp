@@ -7,16 +7,21 @@
 #include <cstring>
 #include <ctime>
 #include <cassert>
-
+#include <queue>
 using namespace std;
 typedef long long ll;
-#define consider_times 2.64
 
+#define consider_times 2.64
 #define core_mem_eps 4.5
 #define pick_weight 0.32
+#define migrate_weight 1.0
 #define ACTIVATE_MIGRATE
 //提交前务必确保DEBUG定义被注释
 #define DEBUG
+
+set<pair<int,int> > servers_left[513];
+set<pair<int,int> > servers_right[513];
+set<pair<int,int> > servers_double[513];
 
 //服务器
 class server {
@@ -454,12 +459,18 @@ void policy_migrate_server(vector<_server> &servers, vector<_vitur> &viturs,
                    servers[viturs[y].server_id].vitur_ids.size();
         return viturs[x].core > viturs[y].core;
     });
-    vector<int> servers_ids(servers.size());
-    for (int i = 0; i < servers.size(); i++)servers_ids[i] = i;
-    sort(servers_ids.begin(), servers_ids.end(), [&](int x, int y) {
-        return servers[x].left_core + servers[x].right_core <
-               servers[y].left_core + servers[y].right_core;
-    });
+    for(int i=0; i < 513; i++) {
+        servers_left[i].clear();
+        servers_right[i].clear();
+        servers_double[i].clear();
+    }
+    int count = 0;
+    for(auto& _server: servers) {
+        servers_left[_server.left_core].insert({_server.left_mem, count});
+        servers_right[_server.right_core].insert({_server.right_mem, count});
+        servers_double[min(_server.left_core, _server.right_core)].insert({min(_server.left_mem, _server.right_mem), count});
+        count += 1;
+    }
     for (auto v_id:viturs_ids) {
         if (!max_migrate)break;
         auto &_vitur = viturs[v_id];
@@ -470,67 +481,58 @@ void policy_migrate_server(vector<_server> &servers, vector<_vitur> &viturs,
         double remain;
         if (_vitur.deploy_node == 0)
             remain = (origin_server.left_core + origin_server.right_core) +
-                     pick_weight * (origin_server.left_mem + origin_server.right_mem);
+                     migrate_weight * (origin_server.left_mem + origin_server.right_mem);
         else if (_vitur.deploy_node == 1)
-            remain = origin_server.left_core + pick_weight * origin_server.left_mem;
+            remain = origin_server.left_core + migrate_weight * origin_server.left_mem;
         else
-            remain = origin_server.right_core + pick_weight * origin_server.right_mem;
+            remain = origin_server.right_core + migrate_weight * origin_server.right_mem;
         bool migrate_flag = false;
-        for (auto &server_id:servers_ids) {
-            auto &_server = servers[server_id];
-            if (_server.index == origin_server.index && _vitur.double_node)continue;
-            else if (_server.index == origin_server.index) {
-                if (_vitur.deploy_node == 1 && _vitur.core <= _server.right_core &&
-                    _vitur.mem <= _server.right_mem) {
-                    double cur_remain = (_server.right_core - _vitur.core) +
-                                        pick_weight * (_server.right_mem - _vitur.mem);
-                    if (cur_remain < remain) {
-                        remain = cur_remain;
-                        best_id = server_id;
-                        deploy_node = 2;
-                        migrate_flag = true;
+        if(_vitur.double_node) {
+            for(int i=_vitur.core/2;i < 513;i++) {
+                auto iter = servers_double[i].lower_bound({_vitur.mem/2, 0});
+                while(iter != servers_double[i].end()) {
+                    if(iter->second == _vitur.server_id) {
+                        iter++;
+                        continue;
                     }
-                }
-                if (_vitur.deploy_node == 2 && _vitur.core <= _server.left_core &&
-                    _vitur.mem <= _server.left_mem) {
-                    double cur_remain = (_server.left_core - _vitur.core) +
-                                        pick_weight * (_server.left_mem - _vitur.mem);
-                    if (cur_remain < remain) {
+                    if(remain < 2 * i - _vitur.core + migrate_weight * (2 * iter->first - _vitur.mem))
+                        break;
+                    int idx = iter->second;
+                    double cur_remain = (servers[idx].left_core + servers[idx].right_core - _vitur.core) +
+                                        migrate_weight * (servers[idx].left_mem + servers[idx].right_mem - _vitur.mem);
+                    if(cur_remain < remain) {
                         remain = cur_remain;
-                        best_id = server_id;
-                        deploy_node = 1;
-                        migrate_flag = true;
-                    }
-                }
-            } else {
-                if (_vitur.double_node && _vitur.core / 2 <= min(_server.left_core, _server.right_core)
-                    && _vitur.mem / 2 <= min(_server.left_mem, _server.right_mem)) {
-                    double cur_remain = (_server.left_core - _vitur.core / 2) + (_server.right_core - _vitur.core / 2)
-                                        + pick_weight * (_server.left_mem - _vitur.mem / 2) +
-                                        pick_weight * (_server.right_mem - _vitur.mem / 2);
-                    if (cur_remain < remain) {
-                        remain = cur_remain;
-                        best_id = server_id;
+                        best_id = idx;
                         deploy_node = 0;
                         migrate_flag = true;
                     }
+                    iter++;
                 }
-                if (!_vitur.double_node && _vitur.core <= _server.left_core && _vitur.mem <= _server.left_mem) {
-                    double cur_remain =
-                            (_server.left_core - _vitur.core) + pick_weight * (_server.left_mem - _vitur.mem);
-                    if (cur_remain < remain) {
+            }
+        } else {
+            for(int i=_vitur.core; i < 513; i++) {
+                auto iter = servers_left[i].lower_bound({_vitur.mem, 0});
+                if(iter != servers_left[i].end() && iter->second == _vitur.server_id && 1 == _vitur.deploy_node)
+                    iter++;
+                if(iter != servers_left[i].end()) {
+                    double cur_remain = (i - _vitur.core) + migrate_weight * (iter->first - _vitur.mem);
+                    if(cur_remain < remain) {
                         remain = cur_remain;
-                        best_id = server_id;
+                        best_id = iter->second;
                         deploy_node = 1;
                         migrate_flag = true;
                     }
                 }
-                if (!_vitur.double_node && _vitur.core <= _server.right_core && _vitur.mem <= _server.right_mem) {
-                    double cur_remain =
-                            (_server.right_core - _vitur.core) + pick_weight * (_server.right_mem - _vitur.mem);
-                    if (cur_remain < remain) {
+            }
+            for(int i=_vitur.core; i < 513; i++) {
+                auto iter = servers_right[i].lower_bound({_vitur.mem, 0});
+                if(iter != servers_right[i].end() && iter->second == _vitur.server_id && 2 == _vitur.deploy_node)
+                    iter++;
+                if(iter != servers_right[i].end()) {
+                    double cur_remain = (i - _vitur.core) + migrate_weight * (iter->first - _vitur.mem);
+                    if(cur_remain < remain) {
                         remain = cur_remain;
-                        best_id = server_id;
+                        best_id = iter->second;
                         deploy_node = 2;
                         migrate_flag = true;
                     }
@@ -538,6 +540,9 @@ void policy_migrate_server(vector<_server> &servers, vector<_vitur> &viturs,
             }
         }
         if (migrate_flag == true) {
+            servers_left[origin_server.left_core].erase({origin_server.left_mem, _vitur.server_id});
+            servers_right[origin_server.right_core].erase({origin_server.right_mem, _vitur.server_id});
+            servers_double[min(origin_server.left_core, origin_server.right_core)].erase({min(origin_server.left_mem, origin_server.right_mem), _vitur.server_id});
             if (_vitur.double_node) {
                 origin_server.left_core += _vitur.core / 2;
                 origin_server.left_mem += _vitur.mem / 2;
@@ -551,7 +556,13 @@ void policy_migrate_server(vector<_server> &servers, vector<_vitur> &viturs,
                 origin_server.right_mem += _vitur.mem;
             }
             origin_server.vitur_ids.erase(_vitur.id);
+            servers_left[origin_server.left_core].insert({origin_server.left_mem, _vitur.server_id});
+            servers_right[origin_server.right_core].insert({origin_server.right_mem, _vitur.server_id});
+            servers_double[min(origin_server.left_core, origin_server.right_core)].insert({min(origin_server.left_mem, origin_server.right_mem), _vitur.server_id});
             auto &new_server = servers[best_id];
+            servers_left[new_server.left_core].erase({new_server.left_mem, best_id});
+            servers_right[new_server.right_core].erase({new_server.right_mem, best_id});
+            servers_double[min(new_server.left_core, new_server.right_core)].erase({min(new_server.left_mem, new_server.right_mem), best_id});
             if (deploy_node == 0) {
                 new_server.left_core -= _vitur.core / 2;
                 new_server.left_mem -= _vitur.mem / 2;
@@ -565,6 +576,9 @@ void policy_migrate_server(vector<_server> &servers, vector<_vitur> &viturs,
                 new_server.right_mem -= _vitur.mem;
             }
             new_server.vitur_ids.insert(_vitur.id);
+            servers_left[new_server.left_core].insert({new_server.left_mem, best_id});
+            servers_right[new_server.right_core].insert({new_server.right_mem, best_id});
+            servers_double[min(new_server.left_core, new_server.right_core)].insert({min(new_server.left_mem, new_server.right_mem), best_id});
             _vitur.server_id = best_id;
             _vitur.deploy_node = deploy_node;
             migrate_details.push_back({_vitur.id, {best_id, deploy_node}});
@@ -604,6 +618,7 @@ void Main() {
     ll purchase_cost = 0, daily_cost = 0, all_cost = 0;
     int migrate_times = 0;
     int T = ioEngine.read_int();
+    int K = ioEngine.read_int();
     auto &server_ids = engine.server_magic_ids;
     auto server_list = engine.server_list;
     sort(server_ids.begin(), server_ids.end(), [&](int x, int y) {
@@ -635,7 +650,7 @@ void Main() {
 //                原服务器尽量选择使用虚拟机少，若虚拟机数量一致，则优先考虑服务器核心数多的
         vector<pair<int, pair<int, int> > > migrate_details;
         int cur_migrate = 0;
-        int max_migrate = engine.total_viturs * 5 / 1000;
+        int max_migrate = engine.total_viturs * 3 / 100;
 #ifdef ACTIVATE_MIGRATE
         auto &servers = engine.servers;
         auto &viturs = engine.viturs;
@@ -796,6 +811,7 @@ void Main() {
             _vitur.can_move = true;
         }
         engine.total_viturs += add_op - (_R - add_op);
+//        fflush(stdout);
     }
     all_cost = purchase_cost + daily_cost;
 #ifdef DEBUG
