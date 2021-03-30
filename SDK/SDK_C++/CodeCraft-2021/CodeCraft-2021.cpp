@@ -17,7 +17,7 @@ typedef long long ll;
 #define migrate_weight 1.0
 #define ACTIVATE_MIGRATE
 //提交前务必确保DEBUG定义被注释
-#define DEBUG
+//#define DEBUG
 
 set<pair<int,int> > servers_left[513];
 set<pair<int,int> > servers_right[513];
@@ -822,10 +822,10 @@ void Main() {
 
 //training_1 and training_2 cannot define at the same time!
 //提交前必须注释这几行 以及 所有DEBUG定义语句!
-#define training_1
+//#define training_1
 //#define training_2
 //#define sample
-#define CLOCK
+//#define CLOCK
 
 int main() {
     // TODO:read standard input
