@@ -25,13 +25,30 @@ def read_txt(path: str):
         T = int(f.readline())
 
         for i in range(T):
+            # print(i)
+            add_temp = []
+            del_temp = []
             R = int(f.readline())
             for j in range(R):
                 line = f.readline().rstrip().lstrip('(').rstrip(')').split(", ")
                 if line[0] == "add":
                     add_req_list.append(line)
+                    add_temp.append(line[2])
                 else:
                     del_req_list.append(line)
+                    del_temp.append(line[1])
+            # print("创建")
+            # print(len(add_temp))
+            # print("删除")
+            # print(len(del_temp))
+            # for a in add_temp:
+            #     for d in del_temp:
+            #         if a == d:
+            #             print("出现当天创建当天删除的虚拟机")
+            # print(add_req_list)
+            # print(del_req_list)
+            # print()
+            # break
     server_array = np.array(server_list)
     virtu_array = np.array(virtu_list)
     add_req_array = np.array(add_req_list)
@@ -44,7 +61,7 @@ def print_list(i_list: list):
 
 
 if __name__ == "__main__":
-    trian_id = 2
+    trian_id = 1
     path = "./training-data/training-" + str(trian_id) + ".txt"
     read_txt(path)
 
@@ -61,7 +78,7 @@ if __name__ == "__main__":
     # print_list(server_hard_cost_list)
 
     server_soft_cost_list = server_array[:, 4].tolist()
-    print_list(server_soft_cost_list)
+    # print_list(server_soft_cost_list)
 
     virtu_mode_list = virtu_array[:, 0].tolist()
     # print_list(virtu_mode_list)
