@@ -43,10 +43,10 @@ def read_txt(path: str):
             # print(len(add_temp))
             # print("删除")
             # print(len(del_temp))
-            # for a in add_temp:
-            #     for d in del_temp:
-            #         if a == d:
-            #             print("出现当天创建当天删除的虚拟机")
+            for a in add_temp:
+                for d in del_temp:
+                    if a == d:
+                        print("出现当天创建当天删除的虚拟机")
             # print(add_req_list)
             # print(del_req_list)
             # print()
