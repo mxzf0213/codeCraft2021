@@ -17,10 +17,10 @@ typedef long long ll;
 //migrate_weight:0.7~0.8
 #define consider_times_cpu 2.64     //采购时考虑cpu的倍数
 #define consider_times_mem 2.33     //采购时考虑mem的倍数
-#define best_fit_desc_mem 1.3       //离线部署时考虑资源排序的mem占比
+#define best_fit_desc_mem 1.3       //离线部署时考虑资源排序的mem占比?
 #define povit_weight 0.65           //采购服务器的排序方案阈值，重要！
 #define pick_weight 0.32            //部署时考虑碎片中mem占比
-#define migrate_weight 0.8          //迁移时考虑碎片中mem占比
+#define migrate_weight 0.8          //迁移时考虑碎片中mem占比?
 #define ACTIVATE_MIGRATE
 //提交前务必确保DEBUG定义被注释
 #define DEBUG
@@ -465,7 +465,7 @@ void policy_migrate_server(vector<_server> &servers, vector<_vitur> &viturs,
         if (servers[viturs[x].server_id].vitur_ids.size() != servers[viturs[y].server_id].vitur_ids.size())
             return servers[viturs[x].server_id].vitur_ids.size() <
                    servers[viturs[y].server_id].vitur_ids.size();
-        return viturs[x].core > viturs[y].core;
+        return viturs[x].core + 0.3 * viturs[x].mem > viturs[y].core + 0.3 * viturs[y].mem;
     });
     for (int i = 0; i < 513; i++) {
         servers_left[i].clear();
