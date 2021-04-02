@@ -16,7 +16,7 @@ typedef long long ll;
 //consider_times:3
 //migrate_weight:0.7~0.8
 #define consider_times_cpu 2.64     //采购时考虑cpu的倍数
-#define consider_times_mem 2.54     //采购时考虑mem的倍数
+#define consider_times_mem 2.33     //采购时考虑mem的倍数
 #define best_fit_desc_mem 1.3       //离线部署时考虑资源排序的mem占比
 #define povit_weight 0.65           //采购服务器的排序方案阈值，重要！
 #define pick_weight 0.32            //部署时考虑碎片中mem占比
@@ -638,6 +638,7 @@ ll Main() {
 //    处理每一天的请求
     int povit_day = T * povit_weight;
     while (T--) {
+//        tricky policy: 根据当前处于不同阶段的天数执行不同的采购排序策略
         if (T > povit_day) {
             sort(server_ids.begin(), server_ids.end(), [&](int x, int y) {
                 return server_list[x].soft_cost < server_list[y].soft_cost;
