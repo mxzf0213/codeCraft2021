@@ -15,13 +15,12 @@ typedef long long ll;
 //初赛测试集参数：
 //consider_times:3
 //migrate_weight:0.7~0.8
-#define consider_times_cpu 2.64
-#define consider_times_mem 2.54
-#define best_fit_desc_mem 1.3
-#define soft_weight 600
-#define pick_weight 0.32
-#define migrate_weight 0.8
-#define not_migrate_weight 0.0
+#define consider_times_cpu 2.64     //采购时考虑cpu的倍数
+#define consider_times_mem 2.54     //采购时考虑mem的倍数
+#define best_fit_desc_mem 1.3       //离线部署时考虑资源排序的mem占比
+#define povit_weight 0.65           //采购服务器的排序方案阈值，重要！
+#define pick_weight 0.32            //部署时考虑碎片中mem占比
+#define migrate_weight 0.8          //迁移时考虑碎片中mem占比
 #define ACTIVATE_MIGRATE
 //提交前务必确保DEBUG定义被注释
 #define DEBUG
@@ -39,14 +38,16 @@ public:
     double core_mem;
     int sum_cost;
     int average_cost;
+    bool is_choice;
 
     server() {}
 
     server(string mode, int core, int mem, int hard_cost, int soft_cost) :
             mode(mode), core(core), mem(mem), hard_cost(hard_cost), soft_cost(soft_cost) {
         core_mem = 1.0 * core / mem;
-        sum_cost = hard_cost + soft_cost * soft_weight;
-        average_cost = (hard_cost + soft_cost * soft_weight) / core;
+        sum_cost = hard_cost + soft_cost * 1000;
+        average_cost = (hard_cost + soft_cost * 1000) / core;
+        is_choice = true;
     }
 };
 
@@ -634,15 +635,18 @@ ll Main() {
     int K = ioEngine.read_int();
     auto &server_ids = engine.server_magic_ids;
     auto server_list = engine.server_list;
-    sort(server_ids.begin(), server_ids.end(), [&](int x, int y) {
-        return server_list[x].sum_cost < server_list[y].sum_cost;
-    });
 //    处理每一天的请求
+    int povit_day = T * povit_weight;
     while (T--) {
-        sort(server_ids.begin(), server_ids.end(), [&](int x, int y) {
-            return server_list[x].hard_cost + T * server_list[x].soft_cost <
-                   server_list[y].hard_cost + T * server_list[y].soft_cost;
-        });
+        if (T > povit_day) {
+            sort(server_ids.begin(), server_ids.end(), [&](int x, int y) {
+                return server_list[x].soft_cost < server_list[y].soft_cost;
+            });
+        } else {
+            sort(server_ids.begin(), server_ids.end(), [&](int x, int y) {
+                return server_list[x].hard_cost < server_list[y].hard_cost;
+            });
+        }
 //        每一天有R个请求
         int R = ioEngine.read_int();
         int _R = R;
@@ -660,15 +664,14 @@ ll Main() {
 #ifdef ACTIVATE_MIGRATE
         auto &servers = engine.servers;
         auto &viturs = engine.viturs;
-        if (left_source > not_migrate_weight)
-            policy_migrate_server(servers, viturs, migrate_details, engine, max_migrate,
-                                  cur_migrate, migrate_times);
+        policy_migrate_server(servers, viturs, migrate_details, engine, max_migrate,
+                              cur_migrate, migrate_times);
 #endif
-        vector<pair<string,int> > day_requests;
-        for(int i=0;i<R;i++) day_requests.push_back(ioEngine.read_request());
+        vector<pair<string, int> > day_requests;
+        for (int i = 0; i < R; i++) day_requests.push_back(ioEngine.read_request());
         int idx = 0;
         while (R--) {
-            pair<string,int> r = day_requests[idx++];
+            pair<string, int> r = day_requests[idx++];
             string mode = r.first;
             int vitur_id = r.second;
 //            删除
@@ -678,71 +681,16 @@ ll Main() {
                 add_op += 1;
                 engine.viturs_map[vitur_id] = engine.viturs.size();
                 vitur v = engine.vitur_list[engine.vitur_string_map[mode]];
-//                TODO: find a _server or purchase
-                auto &servers = engine.servers;
-                bool flag = false;
-                int server_index = 0;
-                policy_pick_server(v, servers, server_index, flag);
-                flag = false;
-                if (flag == true) {
-                    auto &_server = servers[server_index];
-                    if (v.double_node && _server.left_core >= v.core / 2 && _server.left_mem >= v.mem / 2
-                        && _server.right_core >= v.core / 2 && _server.right_mem >= v.mem / 2) {
-                        _server.left_core -= v.core / 2;
-                        _server.right_core -= v.core / 2;
-                        _server.left_mem -= v.mem / 2;
-                        _server.right_mem -= v.mem / 2;
-                        _server.vitur_ids.insert(vitur_id);
-                        _vitur _v(mode, v.core, v.mem, v.double_node, vitur_id, server_index);
-                        engine.viturs.push_back(_v);
-                        deploy_plan.push_back({server_index, 0});
-                    } else if (_server.left_core >= _server.right_core) {
-                        if (!v.double_node && _server.left_core >= v.core && _server.left_mem >= v.mem) {
-                            _server.left_core -= v.core;
-                            _server.left_mem -= v.mem;
-                            _server.vitur_ids.insert(vitur_id);
-                            _vitur _v(mode, v.core, v.mem, v.double_node, vitur_id, server_index, 1);
-                            engine.viturs.push_back(_v);
-                            deploy_plan.push_back({server_index, 1});
-                        } else if (!v.double_node && _server.right_core >= v.core && _server.right_mem >= v.mem) {
-                            _server.right_core -= v.core;
-                            _server.right_mem -= v.mem;
-                            _server.vitur_ids.insert(vitur_id);
-                            _vitur _v(mode, v.core, v.mem, v.double_node, vitur_id, server_index, 2);
-                            engine.viturs.push_back(_v);
-                            deploy_plan.push_back({server_index, 2});
-                        }
-                    } else {
-                        if (!v.double_node && _server.right_core >= v.core && _server.right_mem >= v.mem) {
-                            _server.right_core -= v.core;
-                            _server.right_mem -= v.mem;
-                            _server.vitur_ids.insert(vitur_id);
-                            _vitur _v(mode, v.core, v.mem, v.double_node, vitur_id, server_index, 2);
-                            engine.viturs.push_back(_v);
-                            deploy_plan.push_back({server_index, 2});
-                        } else if (!v.double_node && _server.left_core >= v.core && _server.left_mem >= v.mem) {
-                            _server.left_core -= v.core;
-                            _server.left_mem -= v.mem;
-                            _server.vitur_ids.insert(vitur_id);
-                            _vitur _v(mode, v.core, v.mem, v.double_node, vitur_id, server_index, 1);
-                            engine.viturs.push_back(_v);
-                            deploy_plan.push_back({server_index, 1});
-                        }
-                    }
-                }
-//                TODO: not find, should purc/hase now!
-                if (!flag) {
-                    deploy_plan.push_back({0, 0});
-                    _vitur _v(mode, v.core, v.mem, v.double_node, vitur_id, -1, -1);
-                    engine.viturs.push_back(_v);
-                    purchase_list.push_back({engine.viturs.size() - 1, deploy_plan.size() - 1});
-                }
+                deploy_plan.push_back({0, 0});
+                _vitur _v(mode, v.core, v.mem, v.double_node, vitur_id, -1, -1);
+                engine.viturs.push_back(_v);
+                purchase_list.push_back({engine.viturs.size() - 1, deploy_plan.size() - 1});
             }
         }
         dynamic_purchase(purchase_list, purchase_plan, engine.server_list, server_ids,
                          deploy_plan, engine.viturs, engine.servers);
-        for(auto r: day_requests) {
-            if(r.first != "")continue;
+        for (auto r: day_requests) {
+            if (r.first != "")continue;
             int vitur_id = r.second;
             int id = engine.viturs_map[vitur_id];
             _vitur &_v = engine.viturs[id];
