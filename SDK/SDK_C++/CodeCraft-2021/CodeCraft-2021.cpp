@@ -21,6 +21,7 @@ typedef long long ll;
 #define povit_weight 0.65           //采购服务器的排序方案阈值，重要！
 #define pick_weight 0.32            //部署时考虑碎片中mem占比
 #define migrate_weight 0.8          //迁移时考虑碎片中mem占比?
+#define migrate_min_num 1           //迁移时在阈值内必须迁出，在阈值内不迁入
 #define ACTIVATE_MIGRATE
 //提交前务必确保DEBUG定义被注释
 #define DEBUG
@@ -474,10 +475,12 @@ void policy_migrate_server(vector<_server> &servers, vector<_vitur> &viturs,
     }
     int count = 0;
     for (auto &_server: servers) {
-        servers_left[_server.left_core].insert({_server.left_mem, count});
-        servers_right[_server.right_core].insert({_server.right_mem, count});
-        servers_double[min(_server.left_core, _server.right_core)].insert(
-                {min(_server.left_mem, _server.right_mem), count});
+        if ((int) _server.vitur_ids.size() > migrate_min_num) {
+            servers_left[_server.left_core].insert({_server.left_mem, count});
+            servers_right[_server.right_core].insert({_server.right_mem, count});
+            servers_double[min(_server.left_core, _server.right_core)].insert(
+                    {min(_server.left_mem, _server.right_mem), count});
+        }
         count += 1;
     }
     for (auto v_id:viturs_ids) {
@@ -495,6 +498,8 @@ void policy_migrate_server(vector<_server> &servers, vector<_vitur> &viturs,
             remain = origin_server.left_core + migrate_weight * origin_server.left_mem;
         else
             remain = origin_server.right_core + migrate_weight * origin_server.right_mem;
+
+        if ((int) origin_server.vitur_ids.size() <= migrate_min_num)remain = 1e9;
         bool migrate_flag = false;
         if (_vitur.double_node) {
             for (int i = _vitur.core / 2; i < 513; i++) {
@@ -521,7 +526,8 @@ void policy_migrate_server(vector<_server> &servers, vector<_vitur> &viturs,
         } else {
             for (int i = _vitur.core; i < 513; i++) {
                 auto iter = servers_left[i].lower_bound({_vitur.mem, 0});
-                if (iter != servers_left[i].end() && iter->second == _vitur.server_id && 1 == _vitur.deploy_node)
+                if (iter != servers_left[i].end() &&
+                    iter->second == _vitur.server_id && 1 == _vitur.deploy_node)
                     iter++;
                 if (iter != servers_left[i].end()) {
                     double cur_remain = (i - _vitur.core) + migrate_weight * (iter->first - _vitur.mem);
@@ -535,7 +541,8 @@ void policy_migrate_server(vector<_server> &servers, vector<_vitur> &viturs,
             }
             for (int i = _vitur.core; i < 513; i++) {
                 auto iter = servers_right[i].lower_bound({_vitur.mem, 0});
-                if (iter != servers_right[i].end() && iter->second == _vitur.server_id && 2 == _vitur.deploy_node)
+                if (iter != servers_right[i].end() &&
+                    iter->second == _vitur.server_id && 2 == _vitur.deploy_node)
                     iter++;
                 if (iter != servers_right[i].end()) {
                     double cur_remain = (i - _vitur.core) + migrate_weight * (iter->first - _vitur.mem);
@@ -566,10 +573,12 @@ void policy_migrate_server(vector<_server> &servers, vector<_vitur> &viturs,
                 origin_server.right_mem += _vitur.mem;
             }
             origin_server.vitur_ids.erase(_vitur.id);
-            servers_left[origin_server.left_core].insert({origin_server.left_mem, _vitur.server_id});
-            servers_right[origin_server.right_core].insert({origin_server.right_mem, _vitur.server_id});
-            servers_double[min(origin_server.left_core, origin_server.right_core)].insert(
-                    {min(origin_server.left_mem, origin_server.right_mem), _vitur.server_id});
+            if ((int) origin_server.vitur_ids.size() > migrate_min_num) {
+                servers_left[origin_server.left_core].insert({origin_server.left_mem, _vitur.server_id});
+                servers_right[origin_server.right_core].insert({origin_server.right_mem, _vitur.server_id});
+                servers_double[min(origin_server.left_core, origin_server.right_core)].insert(
+                        {min(origin_server.left_mem, origin_server.right_mem), _vitur.server_id});
+            }
             auto &new_server = servers[best_id];
             servers_left[new_server.left_core].erase({new_server.left_mem, best_id});
             servers_right[new_server.right_core].erase({new_server.right_mem, best_id});
