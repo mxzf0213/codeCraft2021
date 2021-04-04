@@ -18,7 +18,7 @@ typedef long long ll;
 #define consider_times_cpu 2.64     //采购时考虑cpu的倍数
 #define consider_times_mem 2.33     //采购时考虑mem的倍数
 #define best_fit_desc_mem 1.3       //离线部署时考虑资源排序的mem占比?
-#define povit_weight 0.65           //采购服务器的排序方案阈值，重要！
+#define povit_weight 0.70           //采购服务器的排序方案阈值，重要！
 #define pick_weight 0.32            //部署时考虑碎片中mem占比
 #define migrate_weight 0.8          //迁移时考虑碎片中mem占比?
 #define migrate_min_num 1           //迁移时在阈值内必须迁出，在阈值内不迁入
@@ -353,43 +353,48 @@ void dynamic_purchase(vector<pair<int, int> > &purchase_list, vector<int> &purch
         int server_index = -1;
         bool flag = false;
         bool is_left = true;
-        for (int j = start_pos; j < servers.size(); j++) {
-            auto &_server = servers[j];
-            // 单节点部署
-            if (!v.double_node) {
-                // 判断左节点是否可放
-                if (_server.left_core >= v.core && _server.left_mem >= v.mem) {
-                    int cur_remain = (_server.left_core - v.core) + pick_weight * (_server.left_mem - v.mem);
-                    if (cur_remain < remain) {
-                        remain = cur_remain;
-                        server_index = j;
-                        flag = true;
-                        is_left = true;
+        for (int time = 0; time < 2; time++) {
+            if (time == 1 && flag)break;
+            for (int j = start_pos; j < servers.size(); j++) {
+                auto &_server = servers[j];
+                if (time == 0 && _server.vitur_ids.size() == 0)continue;
+                // 单节点部署
+                if (!v.double_node) {
+                    // 判断左节点是否可放
+                    if (_server.left_core >= v.core && _server.left_mem >= v.mem) {
+                        int cur_remain = (_server.left_core - v.core) + pick_weight * (_server.left_mem - v.mem);
+                        if (cur_remain < remain) {
+                            remain = cur_remain;
+                            server_index = j;
+                            flag = true;
+                            is_left = true;
+                        }
+                    }
+                    // 判断右节点
+                    if (_server.right_core >= v.core && _server.right_mem >= v.mem) {
+                        int cur_remain = (_server.right_core - v.core) + pick_weight * (_server.right_mem - v.mem);
+                        if (cur_remain < remain) {
+                            remain = cur_remain;
+                            server_index = j;
+                            flag = true;
+                            is_left = false;
+                        }
                     }
                 }
-                // 判断右节点
-                if (_server.right_core >= v.core && _server.right_mem >= v.mem) {
-                    int cur_remain = (_server.right_core - v.core) + pick_weight * (_server.right_mem - v.mem);
-                    if (cur_remain < remain) {
-                        remain = cur_remain;
-                        server_index = j;
-                        flag = true;
-                        is_left = false;
-                    }
-                }
-            }
-                // 双节点部署
-            else {
-                // 判断双节点资源是否都满足要求
-                if (_server.left_core >= v.core / 2 && _server.left_mem >= v.mem / 2 &&
-                    _server.right_core >= v.core / 2 &&
-                    _server.right_mem >= v.mem / 2) {
-                    int cur_remain = (_server.left_core - v.core / 2) + pick_weight * (_server.left_mem - v.mem / 2) +
-                                     (_server.right_core - v.core / 2) + pick_weight * (_server.right_mem - v.mem / 2);
-                    if (cur_remain < remain) {
-                        remain = cur_remain;
-                        server_index = j;
-                        flag = true;
+                    // 双节点部署
+                else {
+                    // 判断双节点资源是否都满足要求
+                    if (_server.left_core >= v.core / 2 && _server.left_mem >= v.mem / 2 &&
+                        _server.right_core >= v.core / 2 &&
+                        _server.right_mem >= v.mem / 2) {
+                        int cur_remain =
+                                (_server.left_core - v.core / 2) + pick_weight * (_server.left_mem - v.mem / 2) +
+                                (_server.right_core - v.core / 2) + pick_weight * (_server.right_mem - v.mem / 2);
+                        if (cur_remain < remain) {
+                            remain = cur_remain;
+                            server_index = j;
+                            flag = true;
+                        }
                     }
                 }
             }
