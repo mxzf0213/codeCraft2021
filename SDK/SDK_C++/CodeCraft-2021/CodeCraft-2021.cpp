@@ -24,12 +24,14 @@ typedef long long ll;
 #define migrate_min_num 1           //迁移时在阈值内必须迁出，在阈值内不迁入
 #define ACTIVATE_MIGRATE
 #define ACTIVATE_RANDOM_MIGRATE
+#define DOUBLE_NODE_REPLACE
 //提交前务必确保DEBUG定义被注释
 #define DEBUG
 
 set<pair<int, int> > servers_left[513];
 set<pair<int, int> > servers_right[513];
 set<pair<int, int> > servers_double[513];
+int magic_server_id;
 
 //服务器
 class server {
@@ -357,6 +359,7 @@ void dynamic_purchase(vector<pair<int, int> > &purchase_list, vector<int> &purch
         for (int time = 0; time < 2; time++) {
             if (time == 1 && flag)break;
             for (int j = start_pos; j < servers.size(); j++) {
+                if (j == magic_server_id)continue;
                 auto &_server = servers[j];
                 if (time == 0 && _server.vitur_ids.size() == 0)continue;
                 // 单节点部署
@@ -746,17 +749,8 @@ void policy_migrate_server(vector<_server> &servers, vector<_vitur> &viturs,
     }
 #endif
 
-    int max_free_server_id = -1;
-    int max_free_space = 0;
-    for (int i = 0; i < servers.size(); i++) {
-        if (servers[i].vitur_ids.size() == 0) {
-            if (max_free_server_id == -1 || max_free_space < servers[i].core + servers[i].mem) {
-                max_free_space = servers[i].core + servers[i].mem;
-                max_free_server_id = i;
-            }
-        }
-    }
-    if (max_free_server_id == -1)return;
+    int max_free_server_id = magic_server_id;
+    int max_deploy_node = 1;
 
     vector<int> servers_ids(servers.size());
     for (int i = 0; i < servers.size(); i++) {
@@ -771,10 +765,14 @@ void policy_migrate_server(vector<_server> &servers, vector<_vitur> &viturs,
     });
     for (int i = 0; i < 513; i++) {
         servers_left[i].clear();
+        servers_double[i].clear();
     }
     for (auto _vitur:viturs) {
-        if (_vitur.alive && _vitur.double_node == false) {
-            servers_left[_vitur.core].insert({_vitur.mem, _vitur.id});
+        if (_vitur.alive) {
+            if (_vitur.double_node == false)
+                servers_left[_vitur.core].insert({_vitur.mem, _vitur.id});
+            else
+                servers_double[_vitur.core / 2].insert({_vitur.mem / 2, _vitur.id});
         }
     }
     for (auto server_id:servers_ids) {
@@ -782,7 +780,9 @@ void policy_migrate_server(vector<_server> &servers, vector<_vitur> &viturs,
         for (auto vitur_id:_server.vitur_ids) {
             auto &_vitur = viturs[engine.viturs_map[vitur_id]];
             if (_vitur.double_node == false) {
-                servers_left[_vitur.core].erase({_vitur.mem, vitur_id});
+                servers_left[_vitur.core].erase({_vitur.mem, _vitur.id});
+            } else {
+                servers_double[_vitur.core / 2].erase({_vitur.mem / 2, _vitur.id});
             }
         }
         vector<int> copy_vitur_ids;
@@ -790,9 +790,14 @@ void policy_migrate_server(vector<_server> &servers, vector<_vitur> &viturs,
         for (auto vitur_id:copy_vitur_ids) {
             if (max_migrate < 3)return;
             auto &_vitur = viturs[engine.viturs_map[vitur_id]];
+#ifdef DOUBLE_NODE_REPLACE
             if (_vitur.double_node == true)continue;
+#endif
             int allow_core, allow_mem;
-            if (_vitur.deploy_node == 1) {
+            if (_vitur.double_node == true) {
+                allow_core = min(_vitur.core / 2 + _server.left_core, _vitur.core / 2 + _server.right_core);
+                allow_mem = min(_vitur.mem / 2 + _server.left_mem, _vitur.mem / 2 + _server.right_mem);
+            } else if (_vitur.deploy_node == 1) {
                 allow_core = _vitur.core + _server.left_core;
                 allow_mem = _vitur.mem + _server.left_mem;
             } else {
@@ -801,22 +806,41 @@ void policy_migrate_server(vector<_server> &servers, vector<_vitur> &viturs,
             }
             int best_id = -1;
             int ma = -1;
-            for (int i = allow_core; i >= _vitur.core; i--) {
-                auto iter = servers_left[i].upper_bound({allow_mem, 1e9});
-                if (iter != servers_left[i].begin()) {
-                    --iter;
-                    if (ma < i + iter->first && _vitur.core + _vitur.mem < i + iter->first) {
+            if (_vitur.double_node == false) {
+                for (int i = allow_core; i >= _vitur.core; i--) {
+                    auto iter = servers_left[i].upper_bound({allow_mem, 1e9});
+                    if (iter != servers_left[i].begin()) {
+                        --iter;
+                        if (ma < i + iter->first && _vitur.core + _vitur.mem < i + iter->first) {
+                            auto &vitur_right = viturs[engine.viturs_map[iter->second]];
+                            auto &server_right = servers[vitur_right.server_id];
+                            if (vitur_right.deploy_node == 1) {
+                                if (vitur_right.core + server_right.left_core < _vitur.core)continue;
+                                if (vitur_right.mem + server_right.left_mem < _vitur.mem)continue;
+                            } else if (vitur_right.deploy_node == 2) {
+                                if (vitur_right.core + server_right.right_core < _vitur.core)continue;
+                                if (vitur_right.mem + server_right.right_mem < _vitur.mem)continue;
+                            }
+                            ma = i + iter->first;
+                            best_id = iter->second;
+                        }
+                    }
+                }
+            } else {
+                for (int i = allow_core; i >= _vitur.core / 2; i--) {
+                    auto iter = servers_double[i].upper_bound({allow_mem, 1e9});
+                    if (iter != servers_double[i].begin()) {
+                        --iter;
                         auto &vitur_right = viturs[engine.viturs_map[iter->second]];
                         auto &server_right = servers[vitur_right.server_id];
-                        if (vitur_right.deploy_node == 1) {
-                            if (vitur_right.core + server_right.left_core < _vitur.core)continue;
-                            if (vitur_right.mem + server_right.left_mem < _vitur.mem)continue;
-                        } else if (vitur_right.deploy_node == 2) {
-                            if (vitur_right.core + server_right.right_core < _vitur.core)continue;
-                            if (vitur_right.mem + server_right.right_mem < _vitur.mem)continue;
+                        if (ma < i + iter->first && _vitur.core + _vitur.mem < vitur_right.core + vitur_right.mem) {
+                            if (vitur_right.core / 2 + server_right.left_core < _vitur.core / 2)continue;
+                            if (vitur_right.mem / 2 + server_right.left_mem < _vitur.mem / 2)continue;
+                            if (vitur_right.core / 2 + server_right.right_core < _vitur.core / 2)continue;
+                            if (vitur_right.mem / 2 + server_right.right_mem < _vitur.mem / 2)continue;
+                            ma = i + iter->first;
+                            best_id = iter->second;
                         }
-                        ma = i + iter->first;
-                        best_id = iter->second;
                     }
                 }
             }
@@ -825,10 +849,19 @@ void policy_migrate_server(vector<_server> &servers, vector<_vitur> &viturs,
             auto &server_right = servers[vitur_right.server_id];
             if (max_free_server_id == -1)continue;
             auto &free_server = servers[max_free_server_id];
-            if (_vitur.core <= free_server.core / 2 && _vitur.mem <= free_server.mem / 2) {
+            if ((max_deploy_node == 1 && _vitur.double_node == false && _vitur.core <= free_server.left_core &&
+                 _vitur.mem <= free_server.left_mem) ||
+                (max_deploy_node == 2 && _vitur.double_node == false && _vitur.core <= free_server.right_core &&
+                 _vitur.mem <= free_server.right_mem) ||
+                (_vitur.double_node && _vitur.core <= free_server.core && _vitur.mem <= free_server.mem)) {
                 _server.vitur_ids.erase(vitur_id);
                 _server.vitur_ids.insert(best_id);
-                if (_vitur.deploy_node == 1) {
+                if (_vitur.double_node == true) {
+                    _server.left_core += _vitur.core / 2;
+                    _server.right_core += _vitur.core / 2;
+                    _server.left_mem += _vitur.mem / 2;
+                    _server.right_mem += _vitur.mem / 2;
+                } else if (_vitur.deploy_node == 1) {
                     _server.left_core += _vitur.core;
                     _server.left_mem += _vitur.mem;
                 } else {
@@ -837,7 +870,12 @@ void policy_migrate_server(vector<_server> &servers, vector<_vitur> &viturs,
                 }
                 server_right.vitur_ids.erase(best_id);
                 server_right.vitur_ids.insert(vitur_id);
-                if (vitur_right.deploy_node == 1) {
+                if (vitur_right.double_node == true) {
+                    server_right.left_core += vitur_right.core / 2;
+                    server_right.right_core += vitur_right.core / 2;
+                    server_right.left_mem += vitur_right.mem / 2;
+                    server_right.right_mem += vitur_right.mem / 2;
+                } else if (vitur_right.deploy_node == 1) {
                     server_right.left_core += vitur_right.core;
                     server_right.left_mem += vitur_right.mem;
                 } else {
@@ -846,14 +884,24 @@ void policy_migrate_server(vector<_server> &servers, vector<_vitur> &viturs,
                 }
                 swap(_vitur.server_id, vitur_right.server_id);
                 swap(_vitur.deploy_node, vitur_right.deploy_node);
-                if (_vitur.deploy_node == 1) {
+                if (_vitur.double_node == true) {
+                    server_right.left_core -= _vitur.core / 2;
+                    server_right.left_mem -= _vitur.mem / 2;
+                    server_right.right_core -= _vitur.core / 2;
+                    server_right.right_mem -= _vitur.mem / 2;
+                } else if (_vitur.deploy_node == 1) {
                     server_right.left_core -= _vitur.core;
                     server_right.left_mem -= _vitur.mem;
                 } else {
                     server_right.right_core -= _vitur.core;
                     server_right.right_mem -= _vitur.mem;
                 }
-                if (vitur_right.deploy_node == 1) {
+                if (vitur_right.double_node == true) {
+                    _server.right_core -= vitur_right.core / 2;
+                    _server.right_mem -= vitur_right.mem / 2;
+                    _server.left_core -= vitur_right.core / 2;
+                    _server.left_mem -= vitur_right.mem / 2;
+                } else if (vitur_right.deploy_node == 1) {
                     _server.left_core -= vitur_right.core;
                     _server.left_mem -= vitur_right.mem;
                 } else {
@@ -863,10 +911,16 @@ void policy_migrate_server(vector<_server> &servers, vector<_vitur> &viturs,
                 max_migrate -= 3;
                 migrate_times += 3;
                 cur_migrate += 3;
-                migrate_details.push_back({_vitur.id, {free_server.index, 1}});
+                if (_vitur.double_node == false)
+                    migrate_details.push_back({_vitur.id, {free_server.index, max_deploy_node}});
+                else
+                    migrate_details.push_back({_vitur.id, {free_server.index, 0}});
                 migrate_details.push_back({vitur_right.id, {_server.index, vitur_right.deploy_node}});
                 migrate_details.push_back({_vitur.id, {server_right.index, _vitur.deploy_node}});
-                servers_left[vitur_right.core].erase({vitur_right.mem, vitur_right.id});
+                if (vitur_right.double_node == false)
+                    servers_left[vitur_right.core].erase({vitur_right.mem, vitur_right.id});
+                else
+                    servers_double[vitur_right.core / 2].erase({vitur_right.mem / 2, vitur_right.id});
             }
         }
     }
@@ -907,6 +961,7 @@ ll Main() {
     auto server_list = engine.server_list;
 //    处理每一天的请求
     int povit_day = T * povit_weight;
+    bool first_day = true;
     while (T--) {
 //        tricky policy: 根据当前处于不同阶段的天数执行不同的采购排序策略
         if (T > povit_day) {
@@ -960,6 +1015,21 @@ ll Main() {
         }
         dynamic_purchase(purchase_list, purchase_plan, engine.server_list, server_ids,
                          deploy_plan, engine.viturs, engine.servers);
+        if (first_day == true) {
+            int best_id = -1;
+            for (int i = 0; i < server_list.size(); i++) {
+                if (best_id == -1 ||
+                    server_list[best_id].core + server_list[best_id].mem < server_list[i].core + server_list[i].mem) {
+                    best_id = i;
+                }
+            }
+            auto server = server_list[best_id];
+            purchase_plan[best_id] += 1;
+            _server _s(server.mode, server.core, server.mem, server.hard_cost, server.soft_cost,
+                       servers.size());
+            servers.push_back(_s);
+        }
+
         for (auto r: day_requests) {
             if (r.first != "")continue;
             int vitur_id = r.second;
@@ -1016,6 +1086,20 @@ ll Main() {
         sort(engine.servers.end() - purchase_size, engine.servers.end(), [&](_server x, _server y) {
             return reorder_map[x.index] < reorder_map[y.index];
         });
+        if (first_day == true) {
+            int best_id = -1;
+            for (int i = 0; i < servers.size(); i++) {
+                if (servers[i].vitur_ids.size() == 0) {
+                    if (best_id == -1 ||
+                        servers[best_id].core + servers[best_id].mem < servers[i].core + servers[i].mem) {
+                        best_id = i;
+                    }
+                }
+            }
+            magic_server_id = best_id;
+            first_day = false;
+        }
+
         ioEngine.output_purchase(purchase_type);
         for (int i = 0; i < N; i++) {
             if (purchase_plan[i]) {
