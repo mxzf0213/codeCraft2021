@@ -23,6 +23,7 @@ typedef long long ll;
 #define migrate_weight 0.60          //迁移时考虑碎片中mem占比?
 #define migrate_min_num 1           //迁移时在阈值内必须迁出，在阈值内不迁入
 #define ACTIVATE_MIGRATE
+#define ACTIVATE_RANDOM_MIGRATE
 //提交前务必确保DEBUG定义被注释
 #define DEBUG
 
@@ -615,6 +616,7 @@ void policy_migrate_server(vector<_server> &servers, vector<_vitur> &viturs,
         }
     }
 
+#ifdef ACTIVATE_RANDOM_MIGRATE
     random_shuffle(viturs_ids.begin(), viturs_ids.end());
     for (auto v_id:viturs_ids) {
         if (!max_migrate)break;
@@ -740,6 +742,123 @@ void policy_migrate_server(vector<_server> &servers, vector<_vitur> &viturs,
             max_migrate -= 1;
             migrate_times += 1;
             cur_migrate += 1;
+        }
+    }
+#endif
+
+    int max_free_server_id = -1;
+    int max_free_space = 0;
+    for (int i = 0; i < servers.size(); i++) {
+        if (servers[i].vitur_ids.size() == 0) {
+            if (max_free_server_id == -1 || max_free_space < servers[i].core + servers[i].mem) {
+                max_free_space = servers[i].core + servers[i].mem;
+                max_free_server_id = i;
+            }
+        }
+    }
+    if (max_free_server_id == -1)return;
+
+    vector<int> servers_ids(servers.size());
+    for (int i = 0; i < servers.size(); i++) {
+        servers_ids[i] = i;
+        servers[i].index = i;
+    }
+    sort(servers_ids.begin(), servers_ids.end(), [&](int x, int y) {
+        return servers[x].left_core + servers[x].right_core +
+               migrate_weight * (servers[x].left_mem + servers[x].right_mem) <
+               servers[y].left_core + servers[y].right_core +
+               migrate_weight * (servers[y].left_mem + servers[y].right_mem);
+    });
+    for (int i = 0; i < 513; i++) {
+        servers_left[i].clear();
+    }
+    for (auto _vitur:viturs) {
+        if (_vitur.alive && _vitur.double_node == false) {
+            servers_left[_vitur.core].insert({_vitur.mem, _vitur.id});
+        }
+    }
+    for (auto server_id:servers_ids) {
+        auto &_server = servers[server_id];
+        for (auto vitur_id:_server.vitur_ids) {
+            auto &_vitur = viturs[engine.viturs_map[vitur_id]];
+            if (_vitur.double_node == false) {
+                servers_left[_vitur.core].erase({_vitur.mem, vitur_id});
+            }
+        }
+        vector<int> copy_vitur_ids;
+        for (auto vitur_id: _server.vitur_ids)copy_vitur_ids.push_back(vitur_id);
+        for (auto vitur_id:copy_vitur_ids) {
+            if (max_migrate < 3)return;
+            auto &_vitur = viturs[engine.viturs_map[vitur_id]];
+            if (_vitur.double_node == true)continue;
+            int allow_core, allow_mem;
+            if (_vitur.deploy_node == 1) {
+                allow_core = _vitur.core + _server.left_core;
+                allow_mem = _vitur.mem + _server.left_mem;
+            } else {
+                allow_core = _vitur.core + _server.right_core;
+                allow_mem = _vitur.mem + _server.right_mem;
+            }
+            int best_id = -1;
+            int ma = -1;
+            for (int i = allow_core; i >= _vitur.core; i--) {
+                auto iter = servers_left[i].upper_bound({allow_mem, 1e9});
+                if (iter != servers_left[i].begin()) {
+                    --iter;
+                    if (ma < i + iter->first && _vitur.core + _vitur.mem < i + iter->first) {
+                        ma = i + iter->first;
+                        best_id = iter->second;
+                    }
+                }
+            }
+            if (best_id == -1)continue;
+            auto &vitur_right = viturs[engine.viturs_map[best_id]];
+            auto &server_right = servers[vitur_right.server_id];
+            if (max_free_server_id == -1)continue;
+            auto &free_server = servers[max_free_server_id];
+            if (_vitur.core <= free_server.core / 2 && _vitur.mem <= free_server.mem / 2) {
+                _server.vitur_ids.erase(vitur_id);
+                _server.vitur_ids.insert(best_id);
+                if (_vitur.deploy_node == 1) {
+                    _server.left_core += _vitur.core;
+                    _server.left_mem += _vitur.mem;
+                } else {
+                    _server.right_core += _vitur.core;
+                    _server.right_mem += _vitur.mem;
+                }
+                server_right.vitur_ids.erase(best_id);
+                server_right.vitur_ids.insert(vitur_id);
+                if (vitur_right.deploy_node == 1) {
+                    server_right.left_core += vitur_right.core;
+                    server_right.left_mem += vitur_right.mem;
+                } else {
+                    server_right.right_core += vitur_right.core;
+                    server_right.right_mem += vitur_right.mem;
+                }
+                swap(_vitur.server_id, vitur_right.server_id);
+                swap(_vitur.deploy_node, vitur_right.deploy_node);
+                if (_vitur.deploy_node == 1) {
+                    server_right.left_core -= _vitur.core;
+                    server_right.left_mem -= _vitur.mem;
+                } else {
+                    server_right.right_core -= _vitur.core;
+                    server_right.right_mem -= _vitur.mem;
+                }
+                if (vitur_right.deploy_node == 1) {
+                    _server.left_core -= vitur_right.core;
+                    _server.left_mem -= vitur_right.mem;
+                } else {
+                    _server.right_core -= vitur_right.core;
+                    _server.right_mem -= vitur_right.mem;
+                }
+                max_migrate -= 3;
+                migrate_times += 3;
+                cur_migrate += 3;
+                migrate_details.push_back({_vitur.id, {free_server.index, 1}});
+                migrate_details.push_back({vitur_right.id, {_server.index, vitur_right.deploy_node}});
+                migrate_details.push_back({_vitur.id, {server_right.index, _vitur.deploy_node}});
+                servers_left[vitur_right.core].erase({vitur_right.mem, vitur_right.id});
+            }
         }
     }
 #endif
@@ -969,6 +1088,7 @@ int main() {
     clock_t start = clock();
 #endif CLOCK
 #ifdef joint-debug
+//    srand((unsigned) time(0));
     freopen("training-1.in", "r", stdin);
     freopen("training_1.out", "w", stdout);
     freopen("training_1.err", "w", stderr);
