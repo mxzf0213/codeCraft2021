@@ -806,6 +806,15 @@ void policy_migrate_server(vector<_server> &servers, vector<_vitur> &viturs,
                 if (iter != servers_left[i].begin()) {
                     --iter;
                     if (ma < i + iter->first && _vitur.core + _vitur.mem < i + iter->first) {
+                        auto &vitur_right = viturs[engine.viturs_map[iter->second]];
+                        auto &server_right = servers[vitur_right.server_id];
+                        if (vitur_right.deploy_node == 1) {
+                            if (vitur_right.core + server_right.left_core < _vitur.core)continue;
+                            if (vitur_right.mem + server_right.left_mem < _vitur.mem)continue;
+                        } else if (vitur_right.deploy_node == 2) {
+                            if (vitur_right.core + server_right.right_core < _vitur.core)continue;
+                            if (vitur_right.mem + server_right.right_mem < _vitur.mem)continue;
+                        }
                         ma = i + iter->first;
                         best_id = iter->second;
                     }
