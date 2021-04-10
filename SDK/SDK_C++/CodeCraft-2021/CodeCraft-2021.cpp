@@ -16,15 +16,15 @@ typedef long long ll;
 //consider_times:3
 //migrate_weight:0.7~0.8
 #define consider_times_cpu 2.64     //采购时考虑cpu的倍数
-#define consider_times_mem 2.33     //采购时考虑mem的倍数
-#define best_fit_desc_mem 1.3       //离线部署时考虑资源排序的mem占比?
+#define consider_times_mem 2.40     //采购时考虑mem的倍数
+#define best_fit_desc_mem 1.1       //离线部署时考虑资源排序的mem占比?
 #define povit_weight 0.70           //采购服务器的排序方案阈值，重要！
 #define pick_weight 0.32            //部署时考虑碎片中mem占比
-#define migrate_weight 0.60          //迁移时考虑碎片中mem占比?
+#define migrate_weight 0.70          //迁移时考虑碎片中mem占比?
 #define migrate_min_num 1           //迁移时在阈值内必须迁出，在阈值内不迁入
 #define ACTIVATE_MIGRATE
 #define ACTIVATE_RANDOM_MIGRATE
-#define DOUBLE_NODE_REPLACE
+//#define DOUBLE_NODE_REPLACE
 //提交前务必确保DEBUG定义被注释
 #define DEBUG
 
@@ -1181,17 +1181,18 @@ int main() {
     clock_t start = clock();
 #endif CLOCK
 #ifdef joint-debug
-//    srand((unsigned) time(0));
-    freopen("training-1.in", "r", stdin);
-    freopen("training_1.out", "w", stdout);
-    freopen("training_1.err", "w", stderr);
-    ll cost1 = Main();
-    freopen("training-2.in", "r", stdin);
-    freopen("training_2.out", "w", stdout);
-    freopen("training_2.err", "w", stderr);
-    ll cost2 = Main();
-    fprintf(stderr, "All cost = %lld\n", cost1 + cost2);
+    //    srand((unsigned) time(0));
+        freopen("training-1.in", "r", stdin);
+        freopen("training_1.out", "w", stdout);
+        freopen("training_1.err", "w", stderr);
+        ll cost1 = Main();
+        freopen("training-2.in", "r", stdin);
+        freopen("training_2.out", "w", stdout);
+        freopen("training_2.err", "w", stderr);
+        ll cost2 = Main();
+        fprintf(stderr, "All cost = %lld\n", cost1 + cost2);
 #endif
+    srand((unsigned) time(0));
     ll cost = Main();
 #ifdef CLOCK
     clock_t ends = clock();
