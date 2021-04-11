@@ -26,7 +26,7 @@ typedef long long ll;
 #define ACTIVATE_RANDOM_MIGRATE
 //#define DOUBLE_NODE_REPLACE
 //提交前务必确保DEBUG定义被注释
-#define DEBUG
+//#define DEBUG
 
 set<pair<int, int> > servers_left[513];
 set<pair<int, int> > servers_right[513];
@@ -961,8 +961,13 @@ ll Main() {
     auto server_list = engine.server_list;
 //    处理每一天的请求
     int povit_day = T * povit_weight;
+    int min_day = T * 0.4;
+    int max_day = T * 0.6;
+    bool have_used = false;
     bool first_day = true;
+    int pre_max_num = 0;
     while (T--) {
+        int cnt_vitur;
 //        tricky policy: 根据当前处于不同阶段的天数执行不同的采购排序策略
         if (T > povit_day) {
             sort(server_ids.begin(), server_ids.end(), [&](int x, int y) {
@@ -987,6 +992,15 @@ ll Main() {
         vector<pair<int, pair<int, int> > > migrate_details;
         int cur_migrate = 0;
         int max_migrate = engine.total_viturs * 3 / 100;
+        if(have_used == false) {
+            if(left_source >= 0.3 && left_source <= 0.6 && T >= min_day && T <= max_day) {
+                max_migrate = engine.total_viturs;
+                have_used = true;
+            } else if(T == min_day) {
+                max_migrate = engine.total_viturs;
+                have_used = true;
+            }
+        }
 #ifdef ACTIVATE_MIGRATE
         auto &servers = engine.servers;
         auto &viturs = engine.viturs;
@@ -1140,6 +1154,11 @@ ll Main() {
         }
         engine.total_viturs += add_op - (_R - add_op);
 //        fflush(stdout);
+        cnt_vitur = 0;
+        for(auto &_vitur:viturs) {
+            if(_vitur.alive == true) cnt_vitur += 1;
+        }
+        pre_max_num = max(pre_max_num, cnt_vitur);
     }
     all_cost = purchase_cost + daily_cost;
 #ifdef DEBUG
@@ -1154,8 +1173,8 @@ ll Main() {
 //#define training_1
 //#define training_2
 //#define sample
-#define joint-debug
-#define CLOCK
+//#define joint-debug
+//#define CLOCK
 
 int main() {
     // TODO:read standard input
