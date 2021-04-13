@@ -23,7 +23,7 @@ typedef long long ll;
 #define migrate_weight 0.70          //迁移时考虑碎片中mem占比?
 #define migrate_min_num 1           //迁移时在阈值内必须迁出，在阈值内不迁入
 #define ACTIVATE_MIGRATE
-#define ACTIVATE_RANDOM_MIGRATE
+//#define ACTIVATE_RANDOM_MIGRATE
 //#define DOUBLE_NODE_REPLACE
 //提交前务必确保DEBUG定义被注释
 //#define DEBUG
@@ -251,14 +251,17 @@ public:
 
     void output_purchase(int N) {
         fprintf(stdout, "(purchase, %d)\n", N);
+        fflush(stdout);
     }
 
     void output_buy_server(string mode, int number) {
         fprintf(stdout, "(%s, %d)\n", mode.c_str(), number);
+        fflush(stdout);
     }
 
     void output_migration(int N) {
         fprintf(stdout, "(migration, %d)\n", N);
+        fflush(stdout);
     }
 
     void output_migrate(int vitur_id, int target_id, int node = 0) {
@@ -266,6 +269,7 @@ public:
             fprintf(stdout, "(%d, %d, %s)\n", vitur_id, target_id, node == 1 ? "A" : "B");
         else
             fprintf(stdout, "(%d, %d)\n", vitur_id, target_id);
+        fflush(stdout);
     }
 
     void output_deploy(int server_id, int node = 0) {
@@ -273,10 +277,12 @@ public:
             fprintf(stdout, "(%d, %s)\n", server_id, node == 1 ? "A" : "B");
         else
             fprintf(stdout, "(%d)\n", server_id);
+        fflush(stdout);
     }
 
     void output_price(int price) {
         fprintf(stdout, "%d\n", price);
+        fflush(stdout);
     }
 };
 
@@ -995,6 +1001,15 @@ pair<ll, ll> Main() {
 //    处理每一天的请求
     int povit_day = T * povit_weight;
     bool first_day = true;
+    vector<vector<pair<string, pair<int, pair<int, int> > > > > total_day_requests;
+    for (int i = 0; i < K; i++) {
+        int R = ioEngine.read_int();
+        getchar();
+        vector<pair<string, pair<int, pair<int, int> > > > day_requests;
+        for (int j = 0; j < R; j++)day_requests.push_back(ioEngine.read_request());
+        total_day_requests.push_back(day_requests);
+    }
+    int saved_T = T;
     while (T--) {
 //        tricky policy: 根据当前处于不同阶段的天数执行不同的采购排序策略
         if (T > povit_day) {
@@ -1007,9 +1022,8 @@ pair<ll, ll> Main() {
             });
         }
 //        每一天有R个请求
-        int R = ioEngine.read_int();
-        int _R = R;
-        getchar();
+        auto &day_requests = total_day_requests[saved_T - T - 1];
+        int R = day_requests.size();
         int add_op = 0;
         vector<pair<int, int> > deploy_plan;
         vector<int> purchase_plan(engine.N, 0);
@@ -1026,20 +1040,35 @@ pair<ll, ll> Main() {
         policy_migrate_server(servers, viturs, migrate_details, engine, max_migrate,
                               cur_migrate, migrate_times);
 #endif
-        vector<pair<string, pair<int, pair<int, int> > > > day_requests;
+        vector<pair<string, pair<int, pair<int, int> > > > filter_day_requests;
+//        TODO: 输出定价
         for (int i = 0; i < R; i++) {
-            pair<string, pair<int, pair<int, int> > > r = ioEngine.read_request();
+            pair<string, pair<int, pair<int, int> > > r = day_requests[i];
             string mode = r.first;
             int vitur_id = r.second.first;
             int life_days = r.second.second.first;
             int user_price = r.second.second.second;
             if (mode == "") {
-                day_requests.push_back(r);
+                continue;
             } else {
 //                TODO:输出定价
                 int given_price = int(user_price * 0.6);
                 if (given_price < 0) given_price = -1;
                 ioEngine.output_price(given_price);
+            }
+        }
+//        TODO: 读取对手请求
+        for (int i = 0; i < R; i++) {
+            pair<string, pair<int, pair<int, int> > > r = day_requests[i];
+            string mode = r.first;
+            int vitur_id = r.second.first;
+            int life_days = r.second.second.first;
+            int user_price = r.second.second.second;
+            if (mode == "") {
+                filter_day_requests.push_back(r);
+            } else {
+                int given_price = int(user_price * 0.6);
+                if (given_price < 0) given_price = -1;
 //                TODO:读取对手请求
 #ifdef GET_ALL_REQUESTS
                 pair<int, int> response = ioEngine.read_success();
@@ -1051,15 +1080,15 @@ pair<ll, ll> Main() {
                 pair<int, int> response = ioEngine.read_player(stdin);
 #endif
                 if (response.first == 1) {
-                    day_requests.push_back(r);
+                    filter_day_requests.push_back(r);
                     total_profit += given_price;
                 }
             }
         }
         int idx = 0;
-        R = day_requests.size();
+        R = filter_day_requests.size();
         while (R--) {
-            pair<string, pair<int, pair<int, int> > > r = day_requests[idx++];
+            pair<string, pair<int, pair<int, int> > > r = filter_day_requests[idx++];
             string mode = r.first;
             int vitur_id = r.second.first;
             int life_days = r.second.second.first;
@@ -1093,11 +1122,12 @@ pair<ll, ll> Main() {
                        servers.size());
             servers.push_back(_s);
         }
-
-        for (auto r: day_requests) {
+        int delete_op = 0;
+        for (auto r: filter_day_requests) {
             if (r.first != "")continue;
             int vitur_id = r.second.first;
             if (!engine.viturs_map.count(vitur_id)) continue;
+            delete_op += 1;
             int id = engine.viturs_map[vitur_id];
             _vitur &_v = engine.viturs[id];
 //                TODO: 释放_v所在服务器的资源
@@ -1164,7 +1194,6 @@ pair<ll, ll> Main() {
             magic_server_id = best_id;
             first_day = false;
         }
-
         ioEngine.output_purchase(purchase_type);
         for (int i = 0; i < N; i++) {
             if (purchase_plan[i]) {
@@ -1182,6 +1211,13 @@ pair<ll, ll> Main() {
         }
         for (auto plan: deploy_plan) {
             ioEngine.output_deploy(plan.first, plan.second);
+        }
+        if (T >= K) {
+            int R = ioEngine.read_int();
+            getchar();
+            vector<pair<string, pair<int, pair<int, int> > > > day_requests;
+            for (int j = 0; j < R; j++)day_requests.push_back(ioEngine.read_request());
+            total_day_requests.push_back(day_requests);
         }
 //        TODO: 计算每日开销
         ll left_source_cpu = 0;
@@ -1203,8 +1239,8 @@ pair<ll, ll> Main() {
         for (auto &_vitur:viturs) {
             _vitur.can_move = true;
         }
-        engine.total_viturs += add_op - (_R - add_op);
-//        fflush(stdout);
+        engine.total_viturs += add_op - delete_op;
+        fflush(stdout);
     }
     all_cost = purchase_cost + daily_cost;
 #ifdef DEBUG
