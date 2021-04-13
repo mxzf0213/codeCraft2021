@@ -16,10 +16,10 @@ typedef long long ll;
 //consider_times:3
 //migrate_weight:0.7~0.8
 #define consider_times_cpu 2.64     //采购时考虑cpu的倍数
-#define consider_times_mem 2.60     //采购时考虑mem的倍数
+#define consider_times_mem 2.40     //采购时考虑mem的倍数
 #define best_fit_desc_mem 1.1       //离线部署时考虑资源排序的mem占比?
-#define povit_weight 0.50           //采购服务器的排序方案阈值，重要！
-#define pick_weight 0.5            //部署时考虑碎片中mem占比
+#define povit_weight 0.70           //采购服务器的排序方案阈值，重要！
+#define pick_weight 0.32            //部署时考虑碎片中mem占比
 #define migrate_weight 0.70          //迁移时考虑碎片中mem占比?
 #define migrate_min_num 1           //迁移时在阈值内必须迁出，在阈值内不迁入
 #define ACTIVATE_MIGRATE
@@ -27,6 +27,9 @@ typedef long long ll;
 //#define DOUBLE_NODE_REPLACE
 //提交前务必确保DEBUG定义被注释
 //#define DEBUG
+//#define GET_ALL_REQUESTS
+//#define FAIL_ALL_REQUESTS
+#define HUMAN_PLAYER
 
 set<pair<int, int> > servers_left[513];
 set<pair<int, int> > servers_right[513];
@@ -132,6 +135,7 @@ private:
     char temp[512];
     string mode;
     int core, mem, hard_cost, soft_cost;
+    int life_days, user_price;
     bool double_node;
     static const char *sep;
 public:
@@ -184,7 +188,7 @@ public:
         return v;
     }
 
-    pair<string, int> read_request() {
+    pair<string, pair<int, pair<int, int> > > read_request() {
         fgets(temp, 511, stdin);
         if (temp[1] == 'a')
             return read_add();
@@ -192,22 +196,25 @@ public:
             return read_del();
     }
 
-    pair<string, int> read_add() {
+    pair<string, pair<int, pair<int, int> > > read_add() {
         char *token = strtok(temp, sep);
         int cnt = 0;
         while (token != NULL) {
             if (cnt == 1)mode = token;
             else if (cnt == 2)N = atoi(token);
+            else if (cnt == 3)life_days = atoi(token);
+            else if (cnt == 4)user_price = atoi(token);
             token = strtok(NULL, sep);
             cnt += 1;
         }
 #ifdef DEBUG
-        fprintf(stderr, "read add: mode = %s, id = %d\n", mode.c_str(), N);
+        fprintf(stderr, "read add: mode = %s, id = %d, life_days = %d, user_price = %d\n", mode.c_str(), N, life_days,
+                user_price);
 #endif
-        return {mode, N};
+        return {mode, {N, {life_days, user_price}}};
     }
 
-    pair<string, int> read_del() {
+    pair<string, pair<int, pair<int, int> > > read_del() {
         char *token = strtok(temp, sep);
         int cnt = 0;
         while (token != NULL) {
@@ -218,7 +225,28 @@ public:
 #ifdef DEBUG
         fprintf(stderr, "read del: id = %d\n", N);
 #endif
-        return {"", N};
+        return {"", {N, {0, 0}}};
+    }
+
+    pair<int, int> read_success() {
+        return {1, 1e9};
+    }
+
+    pair<int, int> read_fail() {
+        return {0, 0};
+    }
+
+    pair<int, int> read_player(FILE *playerStream) {
+        fgets(temp, 511, playerStream);
+        char *token = strtok(temp, sep);
+        int cnt = 0;
+        while (token != NULL) {
+            if (cnt == 0) N = atoi(token);
+            else if (cnt == 1) user_price = atoi(token);
+            token = strtok(NULL, sep);
+            cnt += 1;
+        }
+        return {N, user_price};
     }
 
     void output_purchase(int N) {
@@ -245,6 +273,10 @@ public:
             fprintf(stdout, "(%d, %s)\n", server_id, node == 1 ? "A" : "B");
         else
             fprintf(stdout, "(%d)\n", server_id);
+    }
+
+    void output_price(int price) {
+        fprintf(stdout, "%d\n", price);
     }
 };
 
@@ -927,7 +959,7 @@ void policy_migrate_server(vector<_server> &servers, vector<_vitur> &viturs,
 #endif
 }
 
-ll Main() {
+pair<ll, ll> Main() {
     double left_source = 0;
     Engine engine;
     IoEngine ioEngine;
@@ -954,6 +986,7 @@ ll Main() {
     }
 
     ll purchase_cost = 0, daily_cost = 0, all_cost = 0;
+    ll total_profit = 0;
     int migrate_times = 0;
     int T = ioEngine.read_int();
     int K = ioEngine.read_int();
@@ -961,13 +994,8 @@ ll Main() {
     auto server_list = engine.server_list;
 //    处理每一天的请求
     int povit_day = T * povit_weight;
-    int min_day = T * 0.4;
-    int max_day = T * 0.6;
-    bool have_used = false;
     bool first_day = true;
-    int pre_max_num = 0;
     while (T--) {
-        int cnt_vitur;
 //        tricky policy: 根据当前处于不同阶段的天数执行不同的采购排序策略
         if (T > povit_day) {
             sort(server_ids.begin(), server_ids.end(), [&](int x, int y) {
@@ -992,28 +1020,50 @@ ll Main() {
         vector<pair<int, pair<int, int> > > migrate_details;
         int cur_migrate = 0;
         int max_migrate = engine.total_viturs * 3 / 100;
-        if(have_used == false) {
-            if(left_source >= 0.3 && left_source <= 0.6 && T >= min_day && T <= max_day) {
-                max_migrate = engine.total_viturs;
-                have_used = true;
-            } else if(T == min_day) {
-                max_migrate = engine.total_viturs;
-                have_used = true;
-            }
-        }
 #ifdef ACTIVATE_MIGRATE
         auto &servers = engine.servers;
         auto &viturs = engine.viturs;
         policy_migrate_server(servers, viturs, migrate_details, engine, max_migrate,
                               cur_migrate, migrate_times);
 #endif
-        vector<pair<string, int> > day_requests;
-        for (int i = 0; i < R; i++) day_requests.push_back(ioEngine.read_request());
-        int idx = 0;
-        while (R--) {
-            pair<string, int> r = day_requests[idx++];
+        vector<pair<string, pair<int, pair<int, int> > > > day_requests;
+        for (int i = 0; i < R; i++) {
+            pair<string, pair<int, pair<int, int> > > r = ioEngine.read_request();
             string mode = r.first;
-            int vitur_id = r.second;
+            int vitur_id = r.second.first;
+            int life_days = r.second.second.first;
+            int user_price = r.second.second.second;
+            if (mode == "") {
+                day_requests.push_back(r);
+            } else {
+//                TODO:输出定价
+                int given_price = int(user_price * 0.6);
+                if (given_price < 0) given_price = -1;
+                ioEngine.output_price(given_price);
+//                TODO:读取对手请求
+#ifdef GET_ALL_REQUESTS
+                pair<int, int> response = ioEngine.read_success();
+#endif
+#ifdef FAIL_ALL_REQUESTS
+                pair<int,int> response = ioEngine.read_fail();
+#endif
+#ifdef HUMAN_PLAYER
+                pair<int, int> response = ioEngine.read_player(stdin);
+#endif
+                if (response.first == 1) {
+                    day_requests.push_back(r);
+                    total_profit += given_price;
+                }
+            }
+        }
+        int idx = 0;
+        R = day_requests.size();
+        while (R--) {
+            pair<string, pair<int, pair<int, int> > > r = day_requests[idx++];
+            string mode = r.first;
+            int vitur_id = r.second.first;
+            int life_days = r.second.second.first;
+            int user_price = r.second.second.second;
 //            删除
             if (mode == "") {
                 continue;
@@ -1046,7 +1096,8 @@ ll Main() {
 
         for (auto r: day_requests) {
             if (r.first != "")continue;
-            int vitur_id = r.second;
+            int vitur_id = r.second.first;
+            if (!engine.viturs_map.count(vitur_id)) continue;
             int id = engine.viturs_map[vitur_id];
             _vitur &_v = engine.viturs[id];
 //                TODO: 释放_v所在服务器的资源
@@ -1154,18 +1205,14 @@ ll Main() {
         }
         engine.total_viturs += add_op - (_R - add_op);
 //        fflush(stdout);
-        cnt_vitur = 0;
-        for(auto &_vitur:viturs) {
-            if(_vitur.alive == true) cnt_vitur += 1;
-        }
-        pre_max_num = max(pre_max_num, cnt_vitur);
     }
     all_cost = purchase_cost + daily_cost;
 #ifdef DEBUG
     fprintf(stderr, "总开销 = %lld, 购买成本 = %lld, 日常开销 = %lld, 总迁移次数 = %d\n", all_cost, purchase_cost, daily_cost,
             migrate_times);
+    fprintf(stderr, "总收入 = %lld, 总利润 = %lld\n", total_profit, total_profit - all_cost);
 #endif
-    return all_cost;
+    return {all_cost, total_profit};
 }
 
 //training_1 and training_2 cannot define at the same time!
@@ -1201,18 +1248,19 @@ int main() {
 #endif CLOCK
 #ifdef joint-debug
     //    srand((unsigned) time(0));
-        freopen("training-1.in", "r", stdin);
-        freopen("training_1.out", "w", stdout);
-        freopen("training_1.err", "w", stderr);
-        ll cost1 = Main();
-        freopen("training-2.in", "r", stdin);
-        freopen("training_2.out", "w", stdout);
-        freopen("training_2.err", "w", stderr);
-        ll cost2 = Main();
-        fprintf(stderr, "All cost = %lld\n", cost1 + cost2);
+    freopen("training-1.in", "r", stdin);
+    freopen("training_1.out", "w", stdout);
+    freopen("training_1.err", "w", stderr);
+    pair<ll, ll> ret1 = Main();
+    freopen("training-2.in", "r", stdin);
+    freopen("training_2.out", "w", stdout);
+    freopen("training_2.err", "w", stderr);
+    pair<ll, ll> ret2 = Main();
+    fprintf(stderr, "All cost = %lld, All get = %lld, All profit = %lld\n", ret1.first + ret2.first,
+            ret1.second + ret2.second, ret1.second + ret2.second - ret1.first - ret2.first);
 #endif
-    srand(0);
-    ll cost = Main();
+    srand((unsigned) time(0));
+    pair<ll, ll> ret = Main();
 #ifdef CLOCK
     clock_t ends = clock();
     fprintf(stderr, "Running Time : %f\n", (double) (ends - start) / CLOCKS_PER_SEC);

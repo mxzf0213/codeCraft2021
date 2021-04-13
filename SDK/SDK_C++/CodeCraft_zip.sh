@@ -12,4 +12,4 @@ then
 fi
 
 rm -f CodeCraft-2021.zip
-zip -r CodeCraft-2021.zip * -x CodeCraft-2021/bin/*
+zip -r CodeCraft-2021.zip * -x CodeCraft-2021/bin/* *.zip
