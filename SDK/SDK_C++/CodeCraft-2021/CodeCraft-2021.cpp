@@ -36,6 +36,11 @@ set<pair<int, int> > servers_right[513];
 set<pair<int, int> > servers_double[513];
 int magic_server_id;
 
+vector<vector<int>> ori_price;
+vector<vector<int>> my_price;
+vector<vector<int>> other_price;
+#define down_limit 0.4
+
 //服务器
 class server {
 public:
@@ -1000,6 +1005,7 @@ pair<ll, ll> Main() {
     auto server_list = engine.server_list;
 //    处理每一天的请求
     int povit_day = T * povit_weight;
+    int not_buy_day = T * 0.25;
     bool first_day = true;
     vector<vector<pair<string, pair<int, pair<int, int> > > > > total_day_requests;
     for (int i = 0; i < K; i++) {
@@ -1042,6 +1048,11 @@ pair<ll, ll> Main() {
 #endif
         vector<pair<string, pair<int, pair<int, int> > > > filter_day_requests;
 //        TODO: 输出定价
+        // 当日各个价格
+        vector<int> today_ori_price;
+        vector<int> today_my_price;
+        vector<int> today_other_price;
+
         for (int i = 0; i < R; i++) {
             pair<string, pair<int, pair<int, int> > > r = day_requests[i];
             string mode = r.first;
@@ -1052,12 +1063,29 @@ pair<ll, ll> Main() {
                 continue;
             } else {
 //                TODO:输出定价
-                int given_price = int(user_price * 0.6);
+                today_ori_price.push_back(user_price);
+                int given_price;
+                if (T <= not_buy_day) {
+                    given_price = int(user_price * 0.8);
+                } else if(user_price < 1000) {
+                    given_price = user_price;
+                } else {
+                    double rand_choice = 1.0 * rand() / RAND_MAX;
+                    double rand_prob = 1.0 * rand() / RAND_MAX;
+                    if(rand_choice < 0.9) {
+                        given_price = int(user_price * (0.6 - 0.03 * rand_prob));
+                    } else {
+                        given_price = int(user_price * (0.6 - 0.1 * rand_prob));
+                    }
+                }
+                today_my_price.push_back(given_price);
                 if (given_price < 0) given_price = -1;
-                ioEngine.output_price(given_price);
+                 ioEngine.output_price(given_price);
             }
         }
+
 //        TODO: 读取对手请求
+        int price_idx = 0;
         for (int i = 0; i < R; i++) {
             pair<string, pair<int, pair<int, int> > > r = day_requests[i];
             string mode = r.first;
@@ -1067,7 +1095,7 @@ pair<ll, ll> Main() {
             if (mode == "") {
                 filter_day_requests.push_back(r);
             } else {
-                int given_price = int(user_price * 0.6);
+                int given_price = today_my_price[price_idx++];
                 if (given_price < 0) given_price = -1;
 //                TODO:读取对手请求
 #ifdef GET_ALL_REQUESTS
@@ -1079,7 +1107,7 @@ pair<ll, ll> Main() {
 #ifdef HUMAN_PLAYER
                 pair<int, int> response = ioEngine.read_player(stdin);
 #endif
-                if (response.first == 1) {
+                if (response.first == 1 && given_price != -1) {
                     filter_day_requests.push_back(r);
                     total_profit += given_price;
                 }
@@ -1295,7 +1323,8 @@ int main() {
     fprintf(stderr, "All cost = %lld, All get = %lld, All profit = %lld\n", ret1.first + ret2.first,
             ret1.second + ret2.second, ret1.second + ret2.second - ret1.first - ret2.first);
 #endif
-    srand((unsigned) time(0));
+//    srand((unsigned) time(0));
+    srand(0);
     pair<ll, ll> ret = Main();
 #ifdef CLOCK
     clock_t ends = clock();
@@ -1303,4 +1332,3 @@ int main() {
 #endif CLOCK
     return 0;
 }
-
