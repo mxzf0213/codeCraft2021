@@ -1,4 +1,5 @@
 import numpy as np
+import matplotlib.pyplot as plt
 
 N = 0
 server_list = []
@@ -71,8 +72,19 @@ def writedict_txt(i_dict: dict):
             f.write(str(v) + "\n")
 
 
+def draw_x_y(x: np.ndarray, y: np.ndarray):
+    plt.plot(x, y)
+    plt.show()
+
+
+def draw_y(y: np.ndarray):
+    x = np.array([i for i in range(len(y))])
+    plt.plot(x, y)
+    plt.show()
+
+
 if __name__ == "__main__":
-    train_id = 1
+    train_id = 2
     path = "./training-data/training-" + str(train_id) + ".txt"
     read_txt(path)
 
@@ -136,4 +148,54 @@ if __name__ == "__main__":
     for i, virtu_req_mode in enumerate(virtu_req_mode_list):
         virtu_req_price_sum[virtu_req_mode] += int(virtu_req_price_list[i])
     # print_dict(virtu_req_price_sum)
-    writedict_txt(virtu_req_price_sum)
+    # writedict_txt(virtu_req_price_sum)
+
+    # 画用户报价~生命周期图
+    virtu_req_price_life = []
+    # print(len(virtu_req_price_list))
+    for i in range(len(virtu_req_price_list)):
+        virtu_req_price_life.append([int(virtu_req_price_list[i]), int(virtu_req_life_list[i])])
+    virtu_req_price_life.sort(key=lambda x: (x[0], x[1]))
+    virtu_req_price = np.array(virtu_req_price_life)[:, 0]
+    virtu_req_life = np.array(virtu_req_price_life)[:, 1]
+    # print(virtu_req_price[99999])
+    # draw_x_y(virtu_req_price[0:90000], virtu_req_life[0:90000])
+
+    # 画用户报价~(生命周期*cpu)图
+    virtu_req_price_lifetcore = []
+    virtu_mode_core = {}
+    for i in range(len(virtu_mode_list)):
+        virtu_mode_core[virtu_mode_list[i]] = int(virtu_core_list[i])
+    virtu_req_lifetcore_list = []
+    for i in range(len(virtu_req_life_list)):
+        virtu_req_lifetcore_list.append(int(virtu_req_life_list[i]) * virtu_mode_core[virtu_req_mode_list[i]])
+    for i in range(len(virtu_req_price_list)):
+        virtu_req_price_lifetcore.append([int(virtu_req_price_list[i]), int(virtu_req_lifetcore_list[i])])
+    virtu_req_price_lifetcore.sort(key=lambda x: (x[0], x[1]))
+    virtu_req_price = np.array(virtu_req_price_lifetcore)[:, 0]
+    virtu_req_lifetcore = np.array(virtu_req_price_lifetcore)[:, 1]
+    # draw_x_y(virtu_req_price, virtu_req_lifetcore)
+
+    # 画用户报价~(生命周期*(cpu+0.4*mem))图
+    mem_weight = 0.4
+    virtu_req_price_lifetcoreamem = []
+    virtu_mode_core = {}
+    virtu_mode_mem = {}
+    for i in range(len(virtu_mode_list)):
+        virtu_mode_core[virtu_mode_list[i]] = int(virtu_core_list[i])
+        virtu_mode_mem[virtu_mode_list[i]] = int(virtu_mem_list[i])
+    virtu_req_lifetcoreamem_list = []
+    for i in range(len(virtu_req_life_list)):
+        virtu_req_lifetcoreamem_list.append(int(virtu_req_life_list[i]) * (
+                virtu_mode_core[virtu_req_mode_list[i]] + mem_weight * virtu_mode_mem[virtu_req_mode_list[i]]))
+    for i in range(len(virtu_req_price_list)):
+        virtu_req_price_lifetcoreamem.append([int(virtu_req_price_list[i]), int(virtu_req_lifetcoreamem_list[i])])
+    virtu_req_price_lifetcoreamem.sort(key=lambda x: (x[0], x[1]))
+    virtu_req_price = np.array(virtu_req_price_lifetcoreamem)[:, 0]
+    virtu_req_lifetcoreamem = np.array(virtu_req_price_lifetcoreamem)[:, 1]
+    # draw_x_y(virtu_req_price, virtu_req_lifetcoreamem)
+    # 计算(生命周期*(cpu+0.4*mem))/用户报价比值中位数
+    rate_array = virtu_req_lifetcoreamem / virtu_req_price
+    draw_y(rate_array)
+    rate_med = np.median(rate_array)
+    # print(rate_med)
