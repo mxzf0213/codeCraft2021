@@ -1129,6 +1129,7 @@ pair<ll, ll> Main() {
         vector<int> today_other_price;
         double my_given_ratio = 0.55 + 0.4 * (saved_T - T) / saved_T;
 //        bool analyze_flag = analyze(my_given_ratio);
+        sort(cpu_mem_prices.begin(), cpu_mem_prices.end());
         for (int i = 0; i < R; i++) {
             pair<string, pair<int, pair<int, int> > > r = day_requests[i];
             string mode = r.first;
