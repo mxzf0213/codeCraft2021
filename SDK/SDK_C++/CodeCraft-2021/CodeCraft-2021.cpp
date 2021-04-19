@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <algorithm>
 #include <cstring>
+#include <cmath>
 #include <ctime>
 #include <cassert>
 #include <queue>
@@ -15,11 +16,11 @@ typedef long long ll;
 //初赛测试集参数：
 //consider_times:3
 //migrate_weight:0.7~0.8
-#define consider_times_cpu 2.64     //采购时考虑cpu的倍数
-#define consider_times_mem 2.40     //采购时考虑mem的倍数
+#define consider_times_cpu 2.20     //采购时考虑cpu的倍数
+#define consider_times_mem 2.20     //采购时考虑mem的倍数
 #define best_fit_desc_mem 1.1       //离线部署时考虑资源排序的mem占比?
-#define povit_weight 0.70           //采购服务器的排序方案阈值，重要！
-#define pick_weight 0.32            //部署时考虑碎片中mem占比
+#define povit_weight 0.40           //采购服务器的排序方案阈值，重要！
+#define pick_weight 0.40            //部署时考虑碎片中mem占比
 #define migrate_weight 0.70          //迁移时考虑碎片中mem占比?
 #define migrate_min_num 1           //迁移时在阈值内必须迁出，在阈值内不迁入
 #define ACTIVATE_MIGRATE
@@ -36,10 +37,10 @@ set<pair<int, int> > servers_right[513];
 set<pair<int, int> > servers_double[513];
 int magic_server_id;
 
-vector<vector<int>> ori_price;
-vector<vector<int>> my_price;
-vector<vector<int>> other_price;
-#define down_limit 0.4
+vector<int> last_user_price;
+vector<int> last_my_price;
+vector<int> last_other_price;
+vector<double> cpu_mem_prices;
 
 //服务器
 class server {
@@ -233,8 +234,8 @@ public:
         return {"", {N, {0, 0}}};
     }
 
-    pair<int, int> read_success() {
-        return {1, 1e9};
+    pair<int, int> read_success(int user_price) {
+        return {1, user_price};
     }
 
     pair<int, int> read_fail() {
@@ -970,7 +971,68 @@ void policy_migrate_server(vector<_server> &servers, vector<_vitur> &viturs,
 #endif
 }
 
+bool analyze(double &my_given_ratio) {
+    if (last_user_price.empty()) {
+        return false;
+    }
+    int all_orders = last_user_price.size();
+    int my_get_orders = 0;
+    int other_get_orders = 0;
+    double my_get_order_ratio = 0;
+    double other_get_order_ratio = 0;
+    double other_min_ratio = 1e9;
+    double other_max_ratio = 0;
+    double other_not_buy_ratio = 0;
+    vector<double> other_price_ratios;
+    for (int i = 0; i < last_other_price.size(); i++) {
+        if (last_my_price[i] != -1 && (last_other_price[i] == -1 || last_other_price[i] >= last_my_price[i])) {
+            my_get_orders += 1;
+        }
+        if (last_other_price[i] != -1 && (last_my_price[i] == -1 || last_my_price[i] >= last_other_price[i])) {
+            other_get_orders += 1;
+        }
+        if (last_other_price[i] == -1) {
+            other_not_buy_ratio += 1;
+        } else {
+            double cur_ratio = 1.0 * last_other_price[i] / last_user_price[i];
+            other_min_ratio = min(other_min_ratio, cur_ratio);
+            other_max_ratio = max(other_max_ratio, cur_ratio);
+            other_price_ratios.push_back(cur_ratio);
+        }
+    }
+    if (!last_user_price.empty()) {
+        my_get_order_ratio = 1.0 * my_get_orders / last_user_price.size();
+        other_get_order_ratio = 1.0 * other_get_orders / last_user_price.size();
+        other_not_buy_ratio = 1.0 * other_not_buy_ratio / last_other_price.size();
+    }
+    sort(other_price_ratios.begin(), other_price_ratios.end());
+    int middle_pos = other_price_ratios.size() / 2;
+    int near_middle = 0;
+    for (auto price_ratio:other_price_ratios) {
+        if (fabs(other_price_ratios[middle_pos] - price_ratio) <= 0.1) {
+            near_middle += 1;
+        }
+    }
+    double near_middle_ratio = 0;
+    if (!other_price_ratios.empty()) {
+        near_middle_ratio = 1.0 * near_middle / other_price_ratios.size();
+    }
+    if (near_middle_ratio >= 0.6) {
+        my_given_ratio = max(my_given_ratio, other_price_ratios[middle_pos] - 0.01);
+        return true;
+    } else if (other_not_buy_ratio >= 0.9) {
+        my_given_ratio = 1;
+        return true;
+    }
+    return false;
+}
+
 pair<ll, ll> Main() {
+    last_my_price.clear();
+    last_other_price.clear();
+    last_other_price.clear();
+    cpu_mem_prices.clear();
+
     double left_source = 0;
     Engine engine;
     IoEngine ioEngine;
@@ -1005,14 +1067,27 @@ pair<ll, ll> Main() {
     auto server_list = engine.server_list;
 //    处理每一天的请求
     int povit_day = T * povit_weight;
-    int not_buy_day = T * 0.25;
+    int limit_day = T * 0.3;
     bool first_day = true;
+    int max_price = 0;
     vector<vector<pair<string, pair<int, pair<int, int> > > > > total_day_requests;
     for (int i = 0; i < K; i++) {
         int R = ioEngine.read_int();
         getchar();
         vector<pair<string, pair<int, pair<int, int> > > > day_requests;
-        for (int j = 0; j < R; j++)day_requests.push_back(ioEngine.read_request());
+        for (int j = 0; j < R; j++) {
+            pair<string, pair<int, pair<int, int> > > r = ioEngine.read_request();
+            if (r.first != "") {
+                int user_price = r.second.second.second;
+                max_price = max(max_price, user_price);
+                string mode = r.first;
+                int life_days = r.second.first;
+                auto cur_vitur = engine.vitur_list[engine.vitur_string_map[mode]];
+                double cpu_mem_price = (cur_vitur.core + 0.4 * cur_vitur.mem) * life_days / user_price;
+                cpu_mem_prices.push_back(user_price);
+            }
+            day_requests.push_back(r);
+        }
         total_day_requests.push_back(day_requests);
     }
     int saved_T = T;
@@ -1052,7 +1127,8 @@ pair<ll, ll> Main() {
         vector<int> today_ori_price;
         vector<int> today_my_price;
         vector<int> today_other_price;
-
+        double my_given_ratio = 0.55 + 0.4 * (saved_T - T) / saved_T;
+//        bool analyze_flag = analyze(my_given_ratio);
         for (int i = 0; i < R; i++) {
             pair<string, pair<int, pair<int, int> > > r = day_requests[i];
             string mode = r.first;
@@ -1065,25 +1141,22 @@ pair<ll, ll> Main() {
 //                TODO:输出定价
                 today_ori_price.push_back(user_price);
                 int given_price;
-                if (T <= not_buy_day) {
-                    given_price = int(user_price * 0.8);
-                } else if(user_price < 1000) {
-                    given_price = user_price;
-                } else {
-                    double rand_choice = 1.0 * rand() / RAND_MAX;
-                    double rand_prob = 1.0 * rand() / RAND_MAX;
-                    if(rand_choice < 0.9) {
-                        given_price = int(user_price * (0.6 - 0.03 * rand_prob));
-                    } else {
-                        given_price = int(user_price * (0.6 - 0.1 * rand_prob));
-                    }
-                }
+                auto cur_vitur = engine.vitur_list[engine.vitur_string_map[mode]];
+//                double cpu_mem_price = (cur_vitur.core + 0.4 * cur_vitur.mem) * life_days / user_price;
+                int pos = lower_bound(cpu_mem_prices.begin(), cpu_mem_prices.end(), user_price) -
+                          cpu_mem_prices.begin();
+                double cur_ratio = my_given_ratio;
+//                if (analyze_flag == false) {
+//                    cur_ratio += -0.1 + 0.2 * rand() / RAND_MAX;
+//                }
+                cur_ratio -= -0.1 + 0.2 * pos / cpu_mem_prices.size();
+//                cur_ratio -= 0.03 * rand() / RAND_MAX;
+                if(cur_ratio > 1)cur_ratio = 1;
+                given_price = int(user_price * cur_ratio);
                 today_my_price.push_back(given_price);
-                if (given_price < 0) given_price = -1;
-                 ioEngine.output_price(given_price);
+                ioEngine.output_price(given_price);
             }
         }
-
 //        TODO: 读取对手请求
         int price_idx = 0;
         for (int i = 0; i < R; i++) {
@@ -1099,7 +1172,7 @@ pair<ll, ll> Main() {
                 if (given_price < 0) given_price = -1;
 //                TODO:读取对手请求
 #ifdef GET_ALL_REQUESTS
-                pair<int, int> response = ioEngine.read_success();
+                pair<int, int> response = ioEngine.read_success(user_price * 0.8);
 #endif
 #ifdef FAIL_ALL_REQUESTS
                 pair<int,int> response = ioEngine.read_fail();
@@ -1111,8 +1184,13 @@ pair<ll, ll> Main() {
                     filter_day_requests.push_back(r);
                     total_profit += given_price;
                 }
+                today_other_price.push_back(response.second);
             }
         }
+
+        last_my_price = today_my_price;
+        last_user_price = today_ori_price;
+        last_other_price = today_other_price;
         int idx = 0;
         R = filter_day_requests.size();
         while (R--) {
@@ -1244,7 +1322,19 @@ pair<ll, ll> Main() {
             int R = ioEngine.read_int();
             getchar();
             vector<pair<string, pair<int, pair<int, int> > > > day_requests;
-            for (int j = 0; j < R; j++)day_requests.push_back(ioEngine.read_request());
+            for (int j = 0; j < R; j++) {
+                pair<string, pair<int, pair<int, int> > > r = ioEngine.read_request();
+                if (r.first != "") {
+                    int user_price = r.second.second.second;
+                    max_price = max(max_price, user_price);
+                    string mode = r.first;
+                    int life_days = r.second.first;
+                    auto cur_vitur = engine.vitur_list[engine.vitur_string_map[mode]];
+                    double cpu_mem_price = (cur_vitur.core + 0.4 * cur_vitur.mem) * life_days / user_price;
+                    cpu_mem_prices.push_back(user_price);
+                }
+                day_requests.push_back(r);
+            }
             total_day_requests.push_back(day_requests);
         }
 //        TODO: 计算每日开销
