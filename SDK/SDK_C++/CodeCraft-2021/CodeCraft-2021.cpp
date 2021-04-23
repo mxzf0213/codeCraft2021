@@ -975,7 +975,7 @@ cal_cost_for_vitur(vitur cur_vitur, double &cur_vitur_profit, vector<_server> se
     int cnt_nodes = 0;
     int index = 0;
     // double alpha = 1;
-    double beta = 0.4;
+    double beta = 0.5;
     for (auto _server: servers) {
         if (index == magic_server_id) {
             index += 1;
