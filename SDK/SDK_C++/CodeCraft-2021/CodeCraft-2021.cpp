@@ -37,6 +37,12 @@ set<pair<int, int> > servers_right[513];
 set<pair<int, int> > servers_double[513];
 int magic_server_id;
 
+vector<int> last_user_price;
+vector<int> last_my_price;
+vector<int> last_other_price;
+vector<double> cpu_mem_prices;
+vector<double> better_order;
+
 //服务器
 class server {
 public:
@@ -66,7 +72,6 @@ public:
     int right_core, right_mem;
     unordered_set<int> vitur_ids;
     bool can_move;
-    double average_day_hard_cost;
 
     _server() {}
 
@@ -381,7 +386,7 @@ int policy_purchase_server(vitur v, vector<int> server_ids, vector<server> serve
 //       最佳适应下降算法
 void dynamic_purchase(vector<pair<int, int> > &purchase_list, vector<int> &purchase_plan, vector<server> &server_list,
                       vector<int> &server_ids, vector<pair<int, int> > &deploy_plan,
-                      vector<_vitur> &viturs, vector<_server> &servers, int left_days) {
+                      vector<_vitur> &viturs, vector<_server> &servers) {
     int purchase_size = purchase_list.size();
     vector<int> sorted_purchase_ids(purchase_size);
     for (int i = 0; i < purchase_size; i++)sorted_purchase_ids[i] = i;
@@ -474,7 +479,6 @@ void dynamic_purchase(vector<pair<int, int> > &purchase_list, vector<int> &purch
             purchase_plan[best_id] += 1;
             _server _s(server.mode, server.core, server.mem, server.hard_cost, server.soft_cost,
                        servers.size());
-            _s.average_day_hard_cost = 1.0 * _s.hard_cost / left_days;
             servers.push_back(_s);
             server_index = servers.size() - 1;
         }
@@ -972,81 +976,69 @@ void policy_migrate_server(vector<_server> &servers, vector<_vitur> &viturs,
 #endif
 }
 
-void
-cal_cost_for_vitur(vitur cur_vitur, double &cur_vitur_profit, vector<_server> servers, vector<server> server_list,
-                   int life_days, double user_price, double day_left, vector<int> server_ids) {
-    double average_cost = 0;
-    int cnt_nodes = 0;
-    int index = 0;
-    // double alpha = 1;
-    double beta = 0.5;
-    for (auto _server: servers) {
-        if (index == magic_server_id) {
-            index += 1;
-            continue;
+bool analyze(double &my_given_ratio) {
+    if (last_user_price.empty()) {
+        return false;
+    }
+    int all_orders = last_user_price.size();
+    int my_get_orders = 0;
+    int other_get_orders = 0;
+    double my_get_order_ratio = 0;
+    double other_get_order_ratio = 0;
+    double other_min_ratio = 1e9;
+    double other_max_ratio = 0;
+    double other_not_buy_ratio = 0;
+    vector<double> other_price_ratios;
+    for (int i = 0; i < last_other_price.size(); i++) {
+        if (last_my_price[i] != -1 && (last_other_price[i] == -1 || last_other_price[i] >= last_my_price[i])) {
+            my_get_orders += 1;
         }
-        index += 1;
-//        单节点
-        if (cur_vitur.double_node == 0) {
-//            左节点
-            if (cur_vitur.core <= _server.left_core && cur_vitur.mem <= _server.left_mem) {
-                average_cost += (double) (cur_vitur.core + beta * cur_vitur.mem) / (_server.core + beta * _server.mem) *
-                                life_days *
-                                (_server.average_day_hard_cost + _server.soft_cost);
-                cnt_nodes += 1;
-            }
-//            右节点
-            if (cur_vitur.core <= _server.right_core && cur_vitur.mem <= _server.right_mem) {
-                average_cost += (double) (cur_vitur.core + beta * cur_vitur.mem) / (_server.core + beta * _server.mem) *
-                                life_days *
-                                (_server.average_day_hard_cost + _server.soft_cost);
-                cnt_nodes += 1;
-            }
+        if (last_other_price[i] != -1 && (last_my_price[i] == -1 || last_my_price[i] >= last_other_price[i])) {
+            other_get_orders += 1;
+        }
+        if (last_other_price[i] == -1) {
+            other_not_buy_ratio += 1;
         } else {
-//            双节点
-            if (cur_vitur.core / 2 <= _server.right_core && cur_vitur.mem / 2 <= _server.right_mem &&
-                cur_vitur.core / 2 <= _server.left_core && cur_vitur.mem / 2 <= _server.left_mem) {
-                average_cost += (double) (cur_vitur.core + beta * cur_vitur.mem) / (_server.core + beta * _server.mem) *
-                                life_days *
-                                (_server.average_day_hard_cost + _server.soft_cost);
-                cnt_nodes += 1;
-            }
+            double cur_ratio = 1.0 * last_other_price[i] / last_user_price[i];
+            other_min_ratio = min(other_min_ratio, cur_ratio);
+            other_max_ratio = max(other_max_ratio, cur_ratio);
+            other_price_ratios.push_back(cur_ratio);
         }
     }
-    if (cnt_nodes) {
-        cur_vitur_profit = average_cost / cnt_nodes;
-        return;
+    if (!last_user_price.empty()) {
+        my_get_order_ratio = 1.0 * my_get_orders / last_user_price.size();
+        other_get_order_ratio = 1.0 * other_get_orders / last_user_price.size();
+        other_not_buy_ratio = 1.0 * other_not_buy_ratio / last_other_price.size();
     }
-    bool flag2 = false;
-    int best_id;
-    for (auto id: server_ids) {
-        auto server = server_list[id];
-        if (server.core >= cur_vitur.core * consider_times_cpu && server.mem >= cur_vitur.mem * consider_times_mem) {
-            flag2 = true;
-            best_id = id;
-            break;
+    sort(other_price_ratios.begin(), other_price_ratios.end());
+    int middle_pos = other_price_ratios.size() / 2;
+    int near_middle = 0;
+    for (auto price_ratio:other_price_ratios) {
+        if (fabs(other_price_ratios[middle_pos] - price_ratio) <= 0.1) {
+            near_middle += 1;
         }
     }
-    if (!flag2) {
-        for (auto id: server_ids) {
-            auto server = server_list[id];
-            if (cur_vitur.double_node && server.core >= cur_vitur.core && server.mem >= cur_vitur.mem) {
-                best_id = id;
-                break;
-            } else if (!cur_vitur.double_node && server.core / 2 >= cur_vitur.core && server.mem / 2 >= cur_vitur.mem) {
-                best_id = id;
-                break;
-            }
-        }
+    double near_middle_ratio = 0;
+    if (!other_price_ratios.empty()) {
+        near_middle_ratio = 1.0 * near_middle / other_price_ratios.size();
     }
-    auto _server = server_list[best_id];
-    cur_vitur_profit =
-            (double) (cur_vitur.core + beta * cur_vitur.mem) / (_server.core + beta * _server.mem) * life_days *
-            (_server.hard_cost / day_left + _server.soft_cost);
-    return;
+    if (near_middle_ratio >= 0.6) {
+        my_given_ratio = max(my_given_ratio, other_price_ratios[middle_pos] - 0.01);
+        return true;
+    } else if (other_not_buy_ratio >= 0.9) {
+        my_given_ratio = 1;
+        return true;
+    }
+    return false;
 }
 
 pair<ll, ll> Main() {
+    last_my_price.clear();
+    last_other_price.clear();
+    last_other_price.clear();
+    cpu_mem_prices.clear();
+    better_order.clear();
+
     double left_source = 0;
     Engine engine;
     IoEngine ioEngine;
@@ -1091,6 +1083,18 @@ pair<ll, ll> Main() {
         vector<pair<string, pair<int, pair<int, int> > > > day_requests;
         for (int j = 0; j < R; j++) {
             pair<string, pair<int, pair<int, int> > > r = ioEngine.read_request();
+            if (r.first != "") {
+                int user_price = r.second.second.second;
+                max_price = max(max_price, user_price);
+                string mode = r.first;
+                int life_days = r.second.second.first;
+                auto cur_vitur = engine.vitur_list[engine.vitur_string_map[mode]];
+                double cpu_mem_price = (cur_vitur.core + 0.4 * cur_vitur.mem) * life_days / user_price;
+                // 维护大小单
+                cpu_mem_prices.push_back(user_price);
+                // 维护优劣单
+                better_order.push_back(cpu_mem_price);
+            }
             day_requests.push_back(r);
         }
         total_day_requests.push_back(day_requests);
@@ -1110,24 +1114,6 @@ pair<ll, ll> Main() {
 //        每一天有R个请求
         auto &day_requests = total_day_requests[saved_T - T - 1];
         int R = day_requests.size();
-        vector<double> day_costs;
-//        TODO: 计算当天预期获取利润情况
-        for (int j = 0; j < R; j++) {
-            pair<string, pair<int, pair<int, int> > > r = day_requests[j];
-            if (r.first != "") {
-                int user_price = r.second.second.second;
-                max_price = max(max_price, user_price);
-                string mode = r.first;
-                int life_days = r.second.second.first;
-                auto cur_vitur = engine.vitur_list[engine.vitur_string_map[mode]];
-                double cur_vitur_cost = 0;
-                cal_cost_for_vitur(cur_vitur, cur_vitur_cost, engine.servers, engine.server_list, life_days,
-                                   user_price, T + 1, server_ids);
-                day_costs.push_back(cur_vitur_cost);
-            }
-            day_requests.push_back(r);
-        }
-
         int add_op = 0;
         vector<pair<int, int> > deploy_plan;
         vector<int> purchase_plan(engine.N, 0);
@@ -1150,16 +1136,14 @@ pair<ll, ll> Main() {
         vector<int> today_ori_price;
         vector<int> today_my_price;
         vector<int> today_other_price;
-
-//        TODO: 需求变更点，对报价进行排序，取最大的三个
-        int add_index = 0;
-        vector<int> day_costs_ids(day_costs.size());
-        for (int i = 0; i < day_costs.size(); i++) {
-            day_costs_ids[i] = i;
-        }
-        sort(day_costs_ids.begin(), day_costs_ids.end(), [&](int x, int y) {
-            return day_costs[x] > day_costs[y];
-        });
+        double v0 = 0.1 / saved_T;
+        double acc_rate = (0.4 - v0 * saved_T) / (0.5 * saved_T * saved_T);
+        double my_given_ratio = 0.6 + v0 * (saved_T - T) + 0.5 * acc_rate * (saved_T - T) * (saved_T - T);
+//        bool analyze_flag = analyze(my_given_ratio);
+        // 维护大小单排序
+        sort(cpu_mem_prices.begin(), cpu_mem_prices.end());
+        // 维护优劣单排序
+        sort(better_order.begin(), better_order.end());
 
         for (int i = 0; i < R; i++) {
             pair<string, pair<int, pair<int, int> > > r = day_requests[i];
@@ -1172,30 +1156,110 @@ pair<ll, ll> Main() {
             } else {
 //                TODO:输出定价
                 today_ori_price.push_back(user_price);
-                double day_cost = day_costs[add_index];
-                double K_ratio = 1.0;
-//                int given_price = day_cost * K_ratio;
-                int given_price = day_cost * (K_ratio + (double) (saved_T - T) / saved_T);
-                given_price = max(given_price, int(0.5 * user_price));
-//                FILE *fp = fopen("given_price.txt", "a+");
-//                fprintf(fp, "%d %d\n", given_price, user_price);
-//                fclose(fp);
-                if (given_price > user_price) given_price = -1;
+                int given_price;
+                auto cur_vitur = engine.vitur_list[engine.vitur_string_map[mode]];
+                double cur_better_order = (cur_vitur.core + 0.4 * cur_vitur.mem) * life_days / user_price;
+                better_order.push_back(cur_better_order);
+                // 找大小单位置,根据大小单浮动定价
+                int pos = lower_bound(cpu_mem_prices.begin(), cpu_mem_prices.end(), user_price) -
+                          cpu_mem_prices.begin();
+                double cur_ratio = my_given_ratio;
+//                if (analyze_flag == false) {
+//                    cur_ratio += -0.1 + 0.2 * rand() / RAND_MAX;
+//                }
+                cur_ratio -= -0.1 + 0.2 * pos / cpu_mem_prices.size();
+
+                // 找优劣单位置，根据优劣单浮动定价
+                int better_pos = lower_bound(better_order.begin(), better_order.end(), cur_better_order) -
+                                 better_order.begin();
+                cur_ratio -= -0.1 + 0.2 * (better_order.size() - better_pos) / better_order.size();
+                // 优劣单最后20% 不要或者原价
+                if (better_pos > 0.8 * better_order.size())
+                    if (1.0 * rand() / RAND_MAX > 0.3)
+                        cur_ratio = 1;
+                    else
+                        cur_ratio = -1;
+                // 大小单最后20% 不要或者原价
+                if (pos < 0.2 * cpu_mem_prices.size())
+                    if (1.0 * rand() / RAND_MAX > 0.3)
+                        cur_ratio = 1;
+                    else
+                        cur_ratio = -1;
+
+
+                // // 如果很劣质的单，出原价或者-1
+                // if(pos > 0.5 * better_order.size()){
+                //     // 后期 1/2 概率出-1不要
+                //     if(T <= 0.5 * saved_T){
+                //         if(1.0 * rand() / RAND_MAX > 0.5){
+                //             cur_ratio = -1;
+                //         }
+                //         else{
+                //             cur_ratio = 1;
+                //         }
+                //     }
+                //     // 前期劣质单出原价
+                //     else{
+                //         cur_ratio = 1;
+                //     }
+                // }
+                // else{
+                //     cur_ratio -= -0.1 + 0.2 * (better_order.size() - pos) / better_order.size();
+                // }
+
+
+                if ((T <= 0.5 * saved_T) &&
+                    (1.0 * cur_vitur.core / cur_vitur.mem >= 2 || 1.0 * cur_vitur.mem / cur_vitur.core >= 2))
+                    if (1.0 * rand() / RAND_MAX > 0.7)
+                        cur_ratio = 1;
+                    else
+                        cur_ratio = -1;
+//                cur_ratio -= 0.03 * rand() / RAND_MAX;
+                if (cur_ratio > 1)cur_ratio = 1;
+                if (user_price * cur_ratio < 0)
+                    given_price = -1;
+                else {
+                    given_price = int(user_price * cur_ratio);
+                }
                 today_my_price.push_back(given_price);
-                bool use_legend = false;
-                if ((int) day_costs_ids.size() > 0 && add_index == day_costs_ids[0]) {
-                    use_legend = true;
-                }
-                if ((int) day_costs_ids.size() > 1 && add_index == day_costs_ids[1]) {
-                    use_legend = true;
-                }
-                if ((int) day_costs_ids.size() > 2 && add_index == day_costs_ids[2]) {
-                    use_legend = true;
-                }
-                ioEngine.output_price(given_price, use_legend);
-                add_index += 1;
+//                ioEngine.output_price(given_price);
             }
         }
+
+        vector<int> today_my_price_ids(today_my_price.size());
+        for (int i = 0; i < today_my_price.size(); i++) {
+            today_my_price_ids[i] = i;
+        }
+        sort(today_my_price_ids.begin(), today_my_price_ids.end(), [&](int x, int y) {
+            return today_my_price[x] > today_my_price[y];
+        });
+
+        int output_index = 0;
+        for (int i = 0; i < R; i++) {
+            pair<string, pair<int, pair<int, int> > > r = day_requests[i];
+            string mode = r.first;
+            int vitur_id = r.second.first;
+            int life_days = r.second.second.first;
+            int user_price = r.second.second.second;
+            if (mode == "") {
+                continue;
+            } else {
+                bool use_legend = false;
+                if ((int) today_my_price_ids.size() > 0 && output_index == today_my_price_ids[0]) {
+                    use_legend = true;
+                    today_my_price[output_index] = today_ori_price[output_index];
+                } else if ((int) today_my_price_ids.size() > 1 && output_index == today_my_price_ids[1]) {
+                    use_legend = true;
+                    today_my_price[output_index] = today_ori_price[output_index];
+                } else if ((int) today_my_price_ids.size() > 2 && output_index == today_my_price_ids[2]) {
+                    use_legend = true;
+                    today_my_price[output_index] = today_ori_price[output_index];
+                }
+                ioEngine.output_price(today_my_price[output_index], use_legend);
+                output_index += 1;
+            }
+        }
+
 //        TODO: 读取对手请求
         int price_idx = 0;
         for (int i = 0; i < R; i++) {
@@ -1227,6 +1291,9 @@ pair<ll, ll> Main() {
             }
         }
 
+        last_my_price = today_my_price;
+        last_user_price = today_ori_price;
+        last_other_price = today_other_price;
         int idx = 0;
         R = filter_day_requests.size();
         while (R--) {
@@ -1249,7 +1316,7 @@ pair<ll, ll> Main() {
             }
         }
         dynamic_purchase(purchase_list, purchase_plan, engine.server_list, server_ids,
-                         deploy_plan, engine.viturs, engine.servers, T + 1);
+                         deploy_plan, engine.viturs, engine.servers);
         if (first_day == true) {
             int best_id = -1;
             for (int i = 0; i < server_list.size(); i++) {
@@ -1262,7 +1329,6 @@ pair<ll, ll> Main() {
             purchase_plan[best_id] += 1;
             _server _s(server.mode, server.core, server.mem, server.hard_cost, server.soft_cost,
                        servers.size());
-            _s.average_day_hard_cost = 1.0 * _s.hard_cost / T;
             servers.push_back(_s);
         }
         int delete_op = 0;
@@ -1368,6 +1434,8 @@ pair<ll, ll> Main() {
                     int life_days = r.second.second.first;
                     auto cur_vitur = engine.vitur_list[engine.vitur_string_map[mode]];
                     double cpu_mem_price = (cur_vitur.core + 0.4 * cur_vitur.mem) * life_days / user_price;
+                    better_order.push_back(cpu_mem_price);
+                    cpu_mem_prices.push_back(user_price);
                 }
                 day_requests.push_back(r);
             }
