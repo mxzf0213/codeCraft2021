@@ -282,8 +282,12 @@ public:
         fflush(stdout);
     }
 
-    void output_price(int price) {
-        fprintf(stdout, "%d\n", price);
+    void output_price(int price, bool use_legend) {
+        if (use_legend == false) {
+            fprintf(stdout, "%d\n", price);
+        } else {
+            fprintf(stdout, "%d, #\n", price);
+        }
         fflush(stdout);
     }
 };
@@ -986,13 +990,15 @@ cal_cost_for_vitur(vitur cur_vitur, double &cur_vitur_profit, vector<_server> se
         if (cur_vitur.double_node == 0) {
 //            左节点
             if (cur_vitur.core <= _server.left_core && cur_vitur.mem <= _server.left_mem) {
-                average_cost += (double) (cur_vitur.core + beta * cur_vitur.mem) / (_server.core + beta * _server.mem) * life_days *
+                average_cost += (double) (cur_vitur.core + beta * cur_vitur.mem) / (_server.core + beta * _server.mem) *
+                                life_days *
                                 (_server.average_day_hard_cost + _server.soft_cost);
                 cnt_nodes += 1;
             }
 //            右节点
             if (cur_vitur.core <= _server.right_core && cur_vitur.mem <= _server.right_mem) {
-                average_cost += (double) (cur_vitur.core + beta * cur_vitur.mem) / (_server.core + beta * _server.mem) * life_days *
+                average_cost += (double) (cur_vitur.core + beta * cur_vitur.mem) / (_server.core + beta * _server.mem) *
+                                life_days *
                                 (_server.average_day_hard_cost + _server.soft_cost);
                 cnt_nodes += 1;
             }
@@ -1000,7 +1006,8 @@ cal_cost_for_vitur(vitur cur_vitur, double &cur_vitur_profit, vector<_server> se
 //            双节点
             if (cur_vitur.core / 2 <= _server.right_core && cur_vitur.mem / 2 <= _server.right_mem &&
                 cur_vitur.core / 2 <= _server.left_core && cur_vitur.mem / 2 <= _server.left_mem) {
-                average_cost += (double) (cur_vitur.core + beta * cur_vitur.mem) / (_server.core + beta * _server.mem) * life_days *
+                average_cost += (double) (cur_vitur.core + beta * cur_vitur.mem) / (_server.core + beta * _server.mem) *
+                                life_days *
                                 (_server.average_day_hard_cost + _server.soft_cost);
                 cnt_nodes += 1;
             }
@@ -1033,8 +1040,9 @@ cal_cost_for_vitur(vitur cur_vitur, double &cur_vitur_profit, vector<_server> se
         }
     }
     auto _server = server_list[best_id];
-    cur_vitur_profit = (double) (cur_vitur.core + beta * cur_vitur.mem) / (_server.core + beta * _server.mem) * life_days *
-                       (_server.hard_cost / day_left + _server.soft_cost);
+    cur_vitur_profit =
+            (double) (cur_vitur.core + beta * cur_vitur.mem) / (_server.core + beta * _server.mem) * life_days *
+            (_server.hard_cost / day_left + _server.soft_cost);
     return;
 }
 
@@ -1143,7 +1151,16 @@ pair<ll, ll> Main() {
         vector<int> today_my_price;
         vector<int> today_other_price;
 
+//        TODO: 需求变更点，对报价进行排序，取最大的三个
         int add_index = 0;
+        vector<int> day_costs_ids(day_costs.size());
+        for (int i = 0; i < day_costs.size(); i++) {
+            day_costs_ids[i] = i;
+        }
+        sort(day_costs_ids.begin(), day_costs_ids.end(), [&](int x, int y) {
+            return day_costs[x] > day_costs[y];
+        });
+
         for (int i = 0; i < R; i++) {
             pair<string, pair<int, pair<int, int> > > r = day_requests[i];
             string mode = r.first;
@@ -1165,7 +1182,17 @@ pair<ll, ll> Main() {
 //                fclose(fp);
                 if (given_price > user_price) given_price = -1;
                 today_my_price.push_back(given_price);
-                ioEngine.output_price(given_price);
+                bool use_legend = false;
+                if ((int) day_costs_ids.size() > 0 && add_index == day_costs_ids[0]) {
+                    use_legend = true;
+                }
+                if ((int) day_costs_ids.size() > 1 && add_index == day_costs_ids[1]) {
+                    use_legend = true;
+                }
+                if ((int) day_costs_ids.size() > 2 && add_index == day_costs_ids[2]) {
+                    use_legend = true;
+                }
+                ioEngine.output_price(given_price, use_legend);
                 add_index += 1;
             }
         }
