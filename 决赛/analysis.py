@@ -1,6 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+plt.rcParams['font.sans-serif'] = ['SimHei']
+
 N = 0
 server_list = []
 server_array = None
@@ -74,17 +76,35 @@ def writedict_txt(i_dict: dict):
 
 def draw_x_y(x: np.ndarray, y: np.ndarray):
     plt.plot(x, y)
+    plt.xlabel("用户报价")
+    plt.ylabel("资源占用")
+    plt.title("trian_2用户报价~(生命周期*(cpu+0.4*mem))")
+    plt.savefig("trian_2用户报价~性价比(0.4)图.jpg")
     plt.show()
 
 
 def draw_y(y: np.ndarray):
-    x = np.array([i for i in range(len(y))])
-    plt.plot(x, y)
+    x = np.array(range(len(y)))
+    plt.bar(x, y)
+    plt.xlabel("第n次请求")
+    plt.ylabel("用户报价")
+    plt.title("train3用户报价柱状图")
+    plt.savefig("train3用户报价柱状图.jpg")
+    plt.show()
+
+
+def draw_life(y: np.ndarray):
+    x = np.array(range(len(y)))
+    plt.bar(x, y)
+    plt.xlabel("第n次请求")
+    plt.ylabel("生命周期")
+    plt.title("train_5生命周期柱状图")
+    plt.savefig("train_5生命周期柱状图.jpg")
     plt.show()
 
 
 if __name__ == "__main__":
-    train_id = 2
+    train_id = 6
     path = "./training-data/training-" + str(train_id) + ".txt"
     read_txt(path)
 
@@ -196,6 +216,20 @@ if __name__ == "__main__":
     # draw_x_y(virtu_req_price, virtu_req_lifetcoreamem)
     # 计算(生命周期*(cpu+0.4*mem))/用户报价比值中位数
     rate_array = virtu_req_lifetcoreamem / virtu_req_price
-    draw_y(rate_array)
+    # draw_y(rate_array)
     rate_med = np.median(rate_array)
     # print(rate_med)
+
+    # 画用户报价图
+    # virtu_req_price_list = add_req_array[:, 4].tolist()
+    # req_price = []
+    # for virtu_req_price in virtu_req_price_list:
+    #     req_price.append(int(virtu_req_price))
+    # draw_y(np.array(req_price))
+
+    # 画生命周期图
+    virtu_req_life_list = add_req_array[:, 3].tolist()
+    req_life = []
+    for virtu_req_life in virtu_req_life_list:
+        req_life.append(int(virtu_req_life))
+    draw_life(np.array(req_life))
